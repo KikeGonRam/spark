@@ -1,6 +1,5 @@
 # Entorno virtual
 .venv/
-venv/
 
 # Python
 __pycache__/
@@ -13,16 +12,9 @@ build/
 # Modelos entrenados (binarios pesados)
 modelo_pipeline_rf_urbanblade/
 
-# Logs y archivos de debug
+# Logs
 *.log
 *.out
-docker_logs*.txt
-test_results*.txt
-test_output.log
-single_test.txt
-
-# Cache y temporales
-.pytest_cache/
 
 # Archivos de sistema
 .DS_Store
