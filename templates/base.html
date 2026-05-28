@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="BarberPro Elite - Sistema de Gestión para Barberías">
+    <meta name="theme-color" content="#0284c7">
+    
+    <title>BarberPro Elite</title>
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- Assets desde Vite -->
+    {% if not debug %}
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <script src="/static/js/main.js" type="module"></script>
+    {% else %}
+    <link rel="stylesheet" href="http://localhost:5173/@vite/client">
+    <script src="http://localhost:5173/js/main.js" type="module"></script>
+    {% endif %}
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+    <link rel="apple-touch-icon" href="/static/img/apple-touch-icon.png">
+    
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#0284c7">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+</head>
+<body class="bg-secondary-50 text-secondary-900 antialiased">
+    <!-- Navigation -->
+    <nav class="sticky top-0 z-40 bg-white shadow-md" x-data="{ mobileOpen: false }">
+        <div class="container-max flex items-center justify-between h-16">
+            <!-- Logo -->
+            <div class="flex items-center gap-2">
+                <a href="/" class="font-bold text-xl text-primary-600">BarberPro Elite</a>
+            </div>
+            
+            <!-- Desktop Menu -->
+            <div class="hidden md:flex items-center gap-6">
+                {% if auth.isAuthenticated %}
+                    <a href="/dashboard" class="text-secondary-700 hover:text-primary-600">Dashboard</a>
+                    <a href="/appointments" class="text-secondary-700 hover:text-primary-600">Citas</a>
+                    <a href="/clients" class="text-secondary-700 hover:text-primary-600">Clientes</a>
+                    <a href="/reports" class="text-secondary-700 hover:text-primary-600">Reportes</a>
+                {% endif %}
+            </div>
+            
+            <!-- User Menu -->
+            <div class="flex items-center gap-4">
+                {% if auth.isAuthenticated %}
+                    <div class="relative" x-data="{ open: false }">
+                        <button @click="open = !open" class="flex items-center gap-2 hover:bg-secondary-100 px-3 py-2 rounded-lg">
+                            <span class="text-sm font-semibold">{{ auth.user.email }}</span>
+                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                        
+                        <!-- Dropdown -->
+                        <div x-show="open" @click.away="open = false" class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg">
+                            <a href="/profile" class="block px-4 py-2 text-sm text-secondary-700 hover:bg-secondary-100 first:rounded-t-lg">
+                                Mi Perfil
+                            </a>
+                            <a href="/settings" class="block px-4 py-2 text-sm text-secondary-700 hover:bg-secondary-100">
+                                Configuración
+                            </a>
+                            <hr class="my-1">
+                            <button @click="auth.logout(); window.location.href='/'" class="w-full text-left px-4 py-2 text-sm text-danger-600 hover:bg-danger-50 last:rounded-b-lg">
+                                Cerrar Sesión
+                            </button>
+                        </div>
+                    </div>
+                {% else %}
+                    <a href="/login" class="btn btn-primary btn-sm">Iniciar Sesión</a>
+                    <a href="/register" class="btn btn-outline btn-sm">Registrarse</a>
+                {% endif %}
+            </div>
+            
+            <!-- Mobile Menu Button -->
+            <button @click="mobileOpen = !mobileOpen" class="md:hidden text-secondary-700">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+            </button>
+        </div>
+        
+        <!-- Mobile Menu -->
+        <div x-show="mobileOpen" class="md:hidden bg-white border-t border-secondary-200">
+            <div class="container-max py-4 space-y-2">
+                {% if auth.isAuthenticated %}
+                    <a href="/dashboard" class="block px-4 py-2 text-secondary-700 hover:bg-secondary-100 rounded-lg">Dashboard</a>
+                    <a href="/appointments" class="block px-4 py-2 text-secondary-700 hover:bg-secondary-100 rounded-lg">Citas</a>
+                    <a href="/clients" class="block px-4 py-2 text-secondary-700 hover:bg-secondary-100 rounded-lg">Clientes</a>
+                    <a href="/reports" class="block px-4 py-2 text-secondary-700 hover:bg-secondary-100 rounded-lg">Reportes</a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+    
+    <!-- Main Content -->
+    <main class="py-8">
+        <!-- Notifications -->
+        <div id="notification-container" class="fixed top-4 right-4 z-50 space-y-2 max-w-md"></div>
+        
+        <!-- Content -->
+        {% block content %}{% endblock %}
+    </main>
+    
+    <!-- Footer -->
+    <footer class="bg-secondary-900 text-secondary-100 mt-16 py-8">
+        <div class="container-max">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
+                <div>
+                    <h3 class="font-bold text-lg mb-4">BarberPro Elite</h3>
+                    <p class="text-secondary-400 text-sm">Sistema completo de gestión para barberías modernas.</p>
+                </div>
+                <div>
+                    <h4 class="font-semibold mb-4">Enlaces Útiles</h4>
+                    <ul class="space-y-2 text-sm text-secondary-400">
+                        <li><a href="/about" class="hover:text-white">Acerca de</a></li>
+                        <li><a href="/help" class="hover:text-white">Ayuda</a></li>
+                        <li><a href="/docs" class="hover:text-white">Documentación</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 class="font-semibold mb-4">Legal</h4>
+                    <ul class="space-y-2 text-sm text-secondary-400">
+                        <li><a href="/privacy" class="hover:text-white">Privacidad</a></li>
+                        <li><a href="/terms" class="hover:text-white">Términos</a></li>
+                        <li><a href="/contact" class="hover:text-white">Contacto</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="border-t border-secondary-800 pt-8 flex items-center justify-between text-sm text-secondary-400">
+                <p>&copy; 2026 BarberPro Elite. Todos los derechos reservados.</p>
+                <p>Versión 1.0.0</p>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>
