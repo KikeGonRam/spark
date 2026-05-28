@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-primary-100">
+    <div class="w-full max-w-md">
+        <div class="card">
+            <h1 class="text-2xl font-bold text-center mb-2">Crear Cuenta</h1>
+            <p class="text-center text-secondary-600 text-sm mb-6">Únete a BarberPro Elite hoy</p>
+            
+            <form id="registerForm" class="space-y-4">
+                <!-- Full Name -->
+                <div class="form-group">
+                    <label class="form-label">Nombre Completo</label>
+                    <input 
+                        type="text" 
+                        name="full_name" 
+                        class="form-input" 
+                        placeholder="Juan García"
+                        required
+                    >
+                </div>
+                
+                <!-- Email -->
+                <div class="form-group">
+                    <label class="form-label">Email</label>
+                    <input 
+                        type="email" 
+                        name="email" 
+                        class="form-input" 
+                        placeholder="tu@email.com"
+                        required
+                    >
+                </div>
+                
+                <!-- Phone -->
+                <div class="form-group">
+                    <label class="form-label">Teléfono</label>
+                    <input 
+                        type="tel" 
+                        name="phone" 
+                        class="form-input" 
+                        placeholder="+56912345678"
+                        required
+                    >
+                </div>
+                
+                <!-- Role -->
+                <div class="form-group">
+                    <label class="form-label">Tipo de Cuenta</label>
+                    <select name="role" class="form-select" required>
+                        <option value="">Seleccionar tipo...</option>
+                        <option value="client">Cliente</option>
+                        <option value="barber">Barbero</option>
+                    </select>
+                </div>
+                
+                <!-- Password -->
+                <div class="form-group">
+                    <label class="form-label">Contraseña</label>
+                    <input 
+                        type="password" 
+                        id="password"
+                        name="password" 
+                        class="form-input" 
+                        placeholder="••••••••"
+                        required
+                        minlength="8"
+                    >
+                    <div id="passwordStrength" class="text-xs text-secondary-600 mt-2">
+                        Debe contener: mayúscula, minúscula, número y carácter especial
+                    </div>
+                </div>
+                
+                <!-- Confirm Password -->
+                <div class="form-group">
+                    <label class="form-label">Confirmar Contraseña</label>
+                    <input 
+                        type="password" 
+                        id="passwordConfirm"
+                        name="password_confirm" 
+                        class="form-input" 
+                        placeholder="••••••••"
+                        required
+                    >
+                </div>
+                
+                <!-- Terms -->
+                <div class="flex items-start">
+                    <input 
+                        type="checkbox" 
+                        id="terms" 
+                        name="terms"
+                        class="rounded mt-1"
+                        required
+                    >
+                    <label for="terms" class="ml-2 text-sm text-secondary-700">
+                        Acepto los <a href="/terms" class="text-primary-600">términos y condiciones</a>
+                    </label>
+                </div>
+                
+                <!-- Submit -->
+                <button type="submit" class="btn btn-primary btn-block">
+                    Crear Cuenta
+                </button>
+            </form>
+            
+            <!-- Links -->
+            <div class="mt-6 pt-6 border-t border-secondary-200 text-center text-sm">
+                <p>
+                    ¿Ya tienes cuenta?
+                    <a href="/login" class="text-primary-600 hover:text-primary-700 font-semibold">
+                        Iniciar sesión
+                    </a>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const form = document.getElementById('registerForm');
+    const passwordInput = document.getElementById('password');
+    const confirmInput = document.getElementById('passwordConfirm');
+    
+    // Validar fortaleza de contraseña en tiempo real
+    passwordInput.addEventListener('input', () => {
+        const validation = window.FormHelper.validatePassword(passwordInput.value);
+        const strengthDiv = document.getElementById('passwordStrength');
+        
+        const checks = [
+            { label: 'Mínimo 8 caracteres', valid: validation.minLength },
+            { label: 'Mayúscula (A-Z)', valid: validation.uppercase },
+            { label: 'Minúscula (a-z)', valid: validation.lowercase },
+            { label: 'Número (0-9)', valid: validation.number },
+            { label: 'Carácter especial (!@#...)', valid: validation.special },
+        ];
+        
+        strengthDiv.innerHTML = checks.map(c => 
+            `<div class="${c.valid ? 'text-success-600' : 'text-secondary-600'}">
+                ${c.valid ? '✓' : '○'} ${c.label}
+            </div>`
+        ).join('');
+    });
+    
+    // Submit form
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        // Validar que las contraseñas coincidan
+        if (passwordInput.value !== confirmInput.value) {
+            Notification.error('Las contraseñas no coinciden');
+            return;
+        }
+        
+        // Validar fortaleza de contraseña
+        const validation = window.FormHelper.validatePassword(passwordInput.value);
+        if (!validation.valid) {
+            Notification.error('La contraseña no cumple los requisitos');
+            return;
+        }
+        
+        const formData = new FormData(form);
+        const data = {
+            full_name: formData.get('full_name'),
+            email: formData.get('email'),
+            phone: formData.get('phone'),
+            password: formData.get('password'),
+            role: formData.get('role'),
+        };
+        
+        try {
+            const response = await window.api.post('/auth/register', data);
+            
+            if (response.success) {
+                // Guardar tokens
+                window.api.setToken(response.data.access_token);
+                localStorage.setItem('refresh_token', response.data.refresh_token);
+                
+                // Guardar usuario
+                window.auth.saveUser(response.data.user);
+                
+                // Redirigir
+                Notification.success('¡Bienvenido a BarberPro!');
+                setTimeout(() => {
+                    window.location.href = '/dashboard';
+                }, 1000);
+            } else {
+                Notification.error(response.message || 'Error al crear cuenta');
+            }
+        } catch (error) {
+            Notification.error('Error: ' + error.message);
+        }
+    });
+});
+</script>
+{% endblock %}

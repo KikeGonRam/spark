@@ -1,0 +1,178 @@
+[project]
+name = "barberpro-python"
+version = "2.0.0"
+description = "BarberPro Elite - Barbershop Management System (Python Edition)"
+authors = [
+    {name = "BarberPro Team", email = "team@barberpro.local"}
+]
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+keywords = ["barbershop", "appointments", "management", "fastapi", "mongodb"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
+    "Intended Audience :: Business/Enterprise",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: Spanish",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+]
+
+dependencies = [
+    # Web Framework
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "python-multipart>=0.0.6",
+    
+    # Database
+    "pymongo>=4.6.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    
+    # Authentication & Security
+    "pyjwt>=2.8.1",
+    "bcrypt>=4.1.0",
+    "python-dotenv>=1.0.0",
+    
+    # Rate Limiting & CORS
+    "slowapi>=0.1.9",
+    "fastapi-cors>=0.0.6",
+    
+    # Async Support
+    "aiofiles>=23.2.1",
+    "aioredis>=2.0.1",
+    "redis>=5.0.0",
+    
+    # IA & External APIs
+    "google-generativeai>=0.3.0",
+    
+    # File Generation
+    "reportlab>=4.0.0",
+    "openpyxl>=3.1.0",
+    "weasyprint>=60.0",
+    
+    # Email
+    "aiosmtplib>=3.0.0",
+    "jinja2>=3.1.0",
+    
+    # Monitoring & Logging
+    "sentry-sdk>=1.38.0",
+    "python-json-logger>=2.0.0",
+    
+    # Image Processing (optional)
+    "pillow>=10.0.0",
+    
+    # Data Validation
+    "email-validator>=2.1.0",
+    "phonenumbers>=8.13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    # Testing
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "httpx>=0.25.0",
+    "pytest-mock>=3.12.0",
+    
+    # Code Quality
+    "black>=23.12.0",
+    "flake8>=6.1.0",
+    "mypy>=1.7.0",
+    "ruff>=0.1.8",
+    "isort>=5.13.0",
+    
+    # Development Tools
+    "ipython>=8.17.0",
+    "ipdb>=0.13.0",
+    "rich>=13.7.0",
+    
+    # Documentation
+    "pdoc>=14.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/barberpro/barberpro-python"
+Repository = "https://github.com/barberpro/barberpro-python.git"
+"Bug Tracker" = "https://github.com/barberpro/barberpro-python/issues"
+Documentation = "https://docs.barberpro.local"
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 100
+target-version = ['py311']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+  | migrations
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+skip = ["migrations", "venv"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+follow_imports = "silent"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+asyncio_mode = "auto"
+addopts = "-v --strict-markers"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [
+    ".git",
+    ".venv",
+    "migrations",
+    "venv",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["app"]
+omit = [
+    "*/migrations/*",
+    "*/tests/*",
+    "*/venv/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if __name__ == .__main__.:",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]
