@@ -1,0 +1,33 @@
+# Entorno virtual
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Modelos entrenados (binarios pesados)
+modelo_pipeline_rf_urbanblade/
+
+# Logs
+*.log
+*.out
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+
+# Variables de entorno
+.env
+*.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Spark temporales
+derby.log
+metastore_db/
+spark-warehouse/
