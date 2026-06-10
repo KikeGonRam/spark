@@ -24,7 +24,6 @@ db_name = os.getenv("MONGO_DB")
 
 st.set_page_config(
     page_title="UrbanBlade — Segmentación de Clientes",
-    page_icon="✂️",
     layout="wide"
 )
 
@@ -99,7 +98,7 @@ if df_citas.empty:
 df = segment_clients(df_citas)
 
 # ── HEADER ─────────────────────────────────────────────────────────────────────
-st.title("✂️ UrbanBlade — Segmentación de Clientes Premium")
+st.title("UrbanBlade — Segmentación de Clientes Premium")
 st.markdown("Sistema de inteligencia para identificar el perfil de cada cliente y personalizar la experiencia.")
 st.divider()
 
@@ -209,14 +208,14 @@ st.divider()
 st.subheader("Acciones recomendadas por segmento")
 col_a, col_b, col_c, col_d = st.columns(4)
 with col_a:
-    st.markdown("### 🥇 VIP")
+    st.markdown("### VIP")
     st.success("Tarjeta premium\nDescuento 15%\nCita preferente\nAcceso anticipado a nuevos servicios")
 with col_b:
-    st.markdown("### 🔥 Alto consumo")
+    st.markdown("### Alto consumo")
     st.warning("Membresía mensual\nPaquete todo incluido\nProductos exclusivos")
 with col_c:
-    st.markdown("### ⭐ Frecuente")
+    st.markdown("### Frecuente")
     st.info("Programa de puntos\nCita #10 gratis\nReferido: $50 de descuento")
 with col_d:
-    st.markdown("### 💤 Inactivo")
+    st.markdown("### Inactivo")
     st.error("WhatsApp: 'Te extrañamos'\nOferta reactivación 20%\nRecordatorio automático")
