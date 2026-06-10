@@ -76,7 +76,21 @@ appointments.barber_id → barbers._id → barbers.user_id → users._id → use
 
 ---
 
-## Archivos de documentación
+## Documentación — Unidad II: Preparación de datos
+
+Resultados de la ejecución del 10 de junio de 2026 — scripts `unidad2/`.
+
+| Archivo | Sesión | Contenido |
+|---------|--------|-----------|
+| [unidad2_01_tipos_fuentes_datos.md](unidad2_01_tipos_fuentes_datos.md) | Sesión 6 | Datos estructurados / semi-estructurados / no estructurados |
+| [unidad2_02_datawarehouse.md](unidad2_02_datawarehouse.md) | Sesión 7 | Star Schema + Snowflake Schema con datos reales |
+| [unidad2_03_limpieza_datos.md](unidad2_03_limpieza_datos.md) | Sesión 8 | 10 técnicas de limpieza — básicas y avanzadas |
+| [unidad2_04_mineria_datos.md](unidad2_04_mineria_datos.md) | Sesión 9 | KDD, tipos de minería, splits 60/20/20, k-fold |
+| [unidad2_05_etl.md](unidad2_05_etl.md) | Sesión 10 | ETL completo: Extract 330 docs → Transform → Load Parquet+CSV |
+
+---
+
+## Documentación — Unidad III: Algoritmos ML
 
 | Archivo | Contenido |
 |---------|-----------|
