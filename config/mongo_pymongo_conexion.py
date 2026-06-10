@@ -1,5 +1,6 @@
 # Conexión alternativa: PyMongo → Pandas → Spark
 # Funciona con cualquier versión de PySpark (no requiere conector MongoDB Spark)
+import sys
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col
 from pyspark.ml.feature import VectorAssembler
@@ -12,7 +13,6 @@ import pandas as pd
 
 
 def get_spark_session():
-
     env_path = Path(__file__).resolve().parent.parent / ".env"
     load_dotenv(dotenv_path=env_path)
 
@@ -20,41 +20,70 @@ def get_spark_session():
     password = quote_plus(os.getenv("MONGO_PASSWORD"))
     cluster  = os.getenv("MONGO_CLUSTER")
     database = os.getenv("MONGO_DB")
-    coll     = os.getenv("MONGO_COLLECTION")
 
     mongo_uri = f"mongodb+srv://{user}:{password}@{cluster}"
 
     spark = SparkSession.builder \
         .appName("UrbanBlade-BigData") \
         .getOrCreate()
-
     spark.sparkContext.setLogLevel("ERROR")
 
-    # PyMongo → Pandas → Spark DataFrame
-    client    = MongoClient(mongo_uri)
-    db        = client[database]
-    cursor    = db[coll].find(
+    # Join de 3 colecciones reales: appointments + services + barbers
+    client = MongoClient(mongo_uri)
+    db     = client[database]
+
+    appointments = list(db["appointments"].find(
         {},
-        {"_id": 0, "servicio": 1, "barbero": 1, "cantidad": 1, "precio": 1, "estado": 1}
-    )
-    pandas_df = pd.DataFrame(list(cursor))
+        {"_id": 0, "service_id": 1, "barber_id": 1,
+         "precio_cobrado": 1, "estado": 1, "fecha": 1}
+    ))
+    services_map = {
+        str(s["_id"]): s
+        for s in db["services"].find({}, {"_id": 1, "nombre": 1, "precio": 1, "duracion_min": 1})
+    }
+    barbers_map = {
+        str(b["_id"]): b
+        for b in db["barbers"].find({}, {"_id": 1, "nombre": 1})
+    }
     client.close()
 
-    print(f"Datos cargados: {len(pandas_df)} registros desde '{coll}'")
+    records = []
+    for apt in appointments:
+        svc = services_map.get(str(apt.get("service_id", "")), {})
+        brb = barbers_map.get(str(apt.get("barber_id", "")), {})
+
+        precio_cobrado = apt.get("precio_cobrado")
+        precio_base    = float(svc.get("precio") or 0)
+        precio         = float(precio_cobrado) if precio_cobrado is not None else precio_base
+
+        records.append({
+            "servicio":    svc.get("nombre", "Desconocido"),
+            "barbero":     brb.get("nombre", "Desconocido"),
+            "duracion_min": float(svc.get("duracion_min") or 30),
+            "precio":      precio,
+            "estado":      str(apt.get("estado", "")),
+            "ingreso":     precio,
+            "fecha":       str(apt.get("fecha", "")),
+        })
+
+    pandas_df = pd.DataFrame(records)
+    print(f"Datos cargados: {len(pandas_df)} citas reales desde appointments")
 
     df = spark.createDataFrame(pandas_df)
     df = df.select(
         col("servicio").cast("string"),
         col("barbero").cast("string"),
-        col("cantidad").cast("double"),
+        col("duracion_min").cast("double"),
         col("precio").cast("double"),
-        col("estado").cast("string")
+        col("estado").cast("string"),
+        col("ingreso").cast("double"),
+        col("fecha").cast("string"),
     )
-    df = df.dropna(subset=["cantidad", "precio"])
-    df = df.withColumn("ingreso", col("cantidad") * col("precio"))
+    df = df.dropna(subset=["duracion_min", "precio"])
+    df = df.withColumn("ingreso", col("precio"))
 
     assembler = VectorAssembler(
-        inputCols=["cantidad", "precio", "ingreso"],
+        inputCols=["duracion_min", "precio", "ingreso"],
         outputCol="features",
         handleInvalid="skip"
     )

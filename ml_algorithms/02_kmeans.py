@@ -29,7 +29,7 @@ def main():
     result = model.transform(df_vector)
 
     print("\n=== RESULTADOS ===")
-    result.select("servicio", "cantidad", "precio", "ingreso", "cluster").show(10)
+    result.select("servicio", "duracion_min", "precio", "ingreso", "cluster").show(10)
 
     evaluator  = ClusteringEvaluator(
         featuresCol="features",
@@ -47,7 +47,7 @@ def main():
     else:
         print("Segmentación débil")
 
-    print("\n=== CENTROIDES ===")
+    print("\n=== CENTROIDES (duracion_min, precio, ingreso) ===")
     for i, center in enumerate(model.clusterCenters()):
         print(f"Cluster {i}: {center}")
 

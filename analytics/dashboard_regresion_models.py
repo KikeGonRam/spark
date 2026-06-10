@@ -20,11 +20,11 @@ st.title("Sistema Inteligente de Predicción de Ingresos – UrbanBlade")
 
 if st.button("Ejecutar Modelo"):
 
-    st.info("Iniciando Spark y cargando datos...")
+    st.info("Iniciando Spark y cargando datos reales...")
     spark, df, _ = get_spark_session()
 
     st.info("Limpiando datos...")
-    df = df.fillna({"cantidad": 0, "precio": 0, "ingreso": 0})
+    df = df.fillna({"duracion_min": 30, "precio": 0, "ingreso": 0})
 
     # Label: cita de ALTO INGRESO (> 500 MXN) = 1, bajo = 0
     df = df.withColumn(
@@ -35,7 +35,7 @@ if st.button("Ejecutar Modelo"):
     train_data, test_data = df.randomSplit([0.7, 0.3], seed=42)
 
     assembler = VectorAssembler(
-        inputCols=["cantidad", "precio", "ingreso"],
+        inputCols=["duracion_min", "precio", "ingreso"],
         outputCol="features",
         handleInvalid="skip"
     )
@@ -73,7 +73,7 @@ if st.button("Ejecutar Modelo"):
     st.success(f"Modelo entrenado | AUC: {round(auc, 4)}")
 
     pdf = predictions.select(
-        "cantidad", "precio", "ingreso", "prediction", "categoria"
+        "duracion_min", "precio", "ingreso", "prediction", "categoria"
     ).toPandas()
 
     st.subheader("Análisis de Datos")
@@ -83,9 +83,9 @@ if st.button("Ejecutar Modelo"):
         pdf = pdf[pdf["categoria"] == categoria]
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("Total registros",   len(pdf))
-    c2.metric("Ingreso promedio",  f"${round(pdf['ingreso'].mean(), 2):,.0f}")
-    c3.metric("AUC del modelo",    round(auc, 4))
+    c1.metric("Total registros",  len(pdf))
+    c2.metric("Ingreso promedio", f"${round(pdf['ingreso'].mean(), 2):,.0f}")
+    c3.metric("AUC del modelo",   round(auc, 4))
 
     fig1 = px.histogram(pdf, x="ingreso", title="Distribución de Ingresos – UrbanBlade")
     st.plotly_chart(fig1, use_container_width=True)
@@ -105,9 +105,11 @@ if st.button("Ejecutar Modelo"):
 
     st.subheader("Importancia de Variables")
     rf_model  = model.bestModel.stages[-1]
-    features  = ["cantidad", "precio", "ingreso"]
+    features  = ["duracion_min", "precio", "ingreso"]
     importance = list(rf_model.featureImportances)
-    fig4 = px.bar(x=features, y=importance, title="Importancia de Variables")
+    fig4 = px.bar(x=features, y=importance,
+                  labels={"x": "Variable", "y": "Importancia"},
+                  title="Importancia de Variables (Random Forest)")
     st.plotly_chart(fig4, use_container_width=True)
 
     st.subheader("Datos procesados")

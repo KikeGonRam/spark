@@ -11,67 +11,86 @@ import pandas as pd
 
 
 def get_spark_session():
-
-    # Garantiza que workers usen el mismo Python que el driver (evita VERSION_MISMATCH)
     os.environ["PYSPARK_PYTHON"]        = sys.executable
     os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
 
-    # 1. Cargar variables de entorno desde /spark/.env
     env_path = Path(__file__).resolve().parent.parent / ".env"
     load_dotenv(dotenv_path=env_path)
 
-    user            = os.getenv("MONGO_USER")
-    password        = quote_plus(os.getenv("MONGO_PASSWORD"))
-    cluster         = os.getenv("MONGO_CLUSTER")
-    database        = os.getenv("MONGO_DB")
-    collection_name = os.getenv("MONGO_COLLECTION")
+    user     = os.getenv("MONGO_USER")
+    password = quote_plus(os.getenv("MONGO_PASSWORD"))
+    cluster  = os.getenv("MONGO_CLUSTER")
+    database = os.getenv("MONGO_DB")
 
     mongo_uri = f"mongodb+srv://{user}:{password}@{cluster}"
 
-    # 2. Crear sesión Spark
     spark = SparkSession.builder \
         .appName("UrbanBlade-BigData") \
         .config("spark.pyspark.python",        sys.executable) \
         .config("spark.pyspark.driver.python", sys.executable) \
         .getOrCreate()
-
     spark.sparkContext.setLogLevel("ERROR")
 
-    # 3. PyMongo carga datos → Pandas → Spark DataFrame
-    client    = MongoClient(mongo_uri)
-    cursor    = client[database][collection_name].find(
+    # Join de 3 colecciones reales: appointments + services + barbers
+    client = MongoClient(mongo_uri)
+    db     = client[database]
+
+    appointments = list(db["appointments"].find(
         {},
-        {"_id": 0, "servicio": 1, "barbero": 1, "cantidad": 1, "precio": 1, "estado": 1}
-    )
-    pandas_df = pd.DataFrame(list(cursor))
+        {"_id": 0, "service_id": 1, "barber_id": 1,
+         "precio_cobrado": 1, "estado": 1, "fecha": 1}
+    ))
+    services_map = {
+        str(s["_id"]): s
+        for s in db["services"].find({}, {"_id": 1, "nombre": 1, "precio": 1, "duracion_min": 1})
+    }
+    barbers_map = {
+        str(b["_id"]): b
+        for b in db["barbers"].find({}, {"_id": 1, "nombre": 1})
+    }
     client.close()
 
-    print(f"Datos UrbanBlade cargados desde MongoDB: {len(pandas_df)} registros")
+    records = []
+    for apt in appointments:
+        svc = services_map.get(str(apt.get("service_id", "")), {})
+        brb = barbers_map.get(str(apt.get("barber_id", "")), {})
+
+        precio_cobrado = apt.get("precio_cobrado")
+        precio_base    = float(svc.get("precio") or 0)
+        precio         = float(precio_cobrado) if precio_cobrado is not None else precio_base
+
+        records.append({
+            "servicio":    svc.get("nombre", "Desconocido"),
+            "barbero":     brb.get("nombre", "Desconocido"),
+            "duracion_min": float(svc.get("duracion_min") or 30),
+            "precio":      precio,
+            "estado":      str(apt.get("estado", "")),
+            "ingreso":     precio,
+            "fecha":       str(apt.get("fecha", "")),
+        })
+
+    pandas_df = pd.DataFrame(records)
+    print(f"Datos reales cargados desde MongoDB: {len(pandas_df)} citas")
 
     df = spark.createDataFrame(pandas_df)
 
-    # 4. Limpieza y tipado (CRÍTICO)
+    # Tipado explícito y limpieza de nulos
     df = df.select(
         col("servicio").cast("string"),
         col("barbero").cast("string"),
-        col("cantidad").cast("double"),
+        col("duracion_min").cast("double"),
         col("precio").cast("double"),
-        col("estado").cast("string")
+        col("estado").cast("string"),
+        col("ingreso").cast("double"),
+        col("fecha").cast("string"),
     )
+    df = df.dropna(subset=["duracion_min", "precio", "ingreso"])
 
-    # 5. Eliminar nulos antes de crear features
-    df = df.dropna(subset=["cantidad", "precio"])
-
-    # 6. Feature Engineering — ingreso = cantidad * precio (patrón del profesor)
-    df = df.withColumn("ingreso", col("cantidad") * col("precio"))
-
-    # 7. Vectorización segura
     assembler = VectorAssembler(
-        inputCols=["cantidad", "precio", "ingreso"],
+        inputCols=["duracion_min", "precio", "ingreso"],
         outputCol="features",
         handleInvalid="skip"
     )
-
     df_vector = assembler.transform(df)
 
     return spark, df, df_vector

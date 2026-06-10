@@ -23,12 +23,12 @@ evaluator = RegressionEvaluator(
 
 
 def graficar(predictions, titulo):
-    pdf = predictions.select("cantidad", "ingreso", "prediction").toPandas()
+    pdf = predictions.select("duracion_min", "ingreso", "prediction").toPandas()
     plt.figure()
-    plt.scatter(pdf["cantidad"], pdf["ingreso"],    label="Real")
-    plt.scatter(pdf["cantidad"], pdf["prediction"], label="Predicción")
+    plt.scatter(pdf["duracion_min"], pdf["ingreso"],    label="Real")
+    plt.scatter(pdf["duracion_min"], pdf["prediction"], label="Predicción")
     plt.title(titulo)
-    plt.xlabel("Cantidad de Servicios")
+    plt.xlabel("Duración del Servicio (min)")
     plt.ylabel("Ingreso ($)")
     plt.legend()
     plt.show()
@@ -36,7 +36,7 @@ def graficar(predictions, titulo):
 
 # MODELO 1 – Regresión Lineal Simple
 print("MODELO 1 REGRESIÓN LINEAL SIMPLE")
-a_simple  = VectorAssembler(inputCols=["cantidad"], outputCol="features")
+a_simple  = VectorAssembler(inputCols=["duracion_min"], outputCol="features")
 tr_simple = a_simple.transform(train)
 te_simple = a_simple.transform(test)
 m1 = LinearRegression(featuresCol="features", labelCol="ingreso").fit(tr_simple)
@@ -47,7 +47,7 @@ graficar(p1, "Regresión Lineal Simple – UrbanBlade")
 
 # MODELO 2 – Regresión Lineal Múltiple
 print("MODELO 2 REGRESIÓN LINEAL MÚLTIPLE")
-a_mult  = VectorAssembler(inputCols=["cantidad", "precio"], outputCol="features")
+a_mult  = VectorAssembler(inputCols=["duracion_min", "precio"], outputCol="features")
 tr_mult = a_mult.transform(train)
 te_mult = a_mult.transform(test)
 m2 = LinearRegression(featuresCol="features", labelCol="ingreso").fit(tr_mult)

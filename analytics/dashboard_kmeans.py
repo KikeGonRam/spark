@@ -25,7 +25,7 @@ def cargar_y_entrenar(k):
     evaluator  = ClusteringEvaluator()
     silhouette = evaluator.evaluate(result)
     pdf = result.select(
-        "servicio", "barbero", "cantidad", "precio", "ingreso", "prediction"
+        "servicio", "barbero", "duracion_min", "precio", "ingreso", "estado", "prediction"
     ).toPandas()
     spark.stop()
     return pdf, silhouette
@@ -34,10 +34,10 @@ def cargar_y_entrenar(k):
 data, silhouette_score = cargar_y_entrenar(k_value)
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Citas Totales",   len(data))
-col2.metric("Ingreso Total",   f"${round(data['ingreso'].sum(), 2):,.0f}")
-col3.metric("Ingreso Promedio",f"${round(data['ingreso'].mean(), 2):,.0f}")
-col4.metric("Silhouette Score",round(silhouette_score, 4))
+col1.metric("Citas Totales",    len(data))
+col2.metric("Ingreso Total",    f"${round(data['ingreso'].sum(), 2):,.0f}")
+col3.metric("Ingreso Promedio", f"${round(data['ingreso'].mean(), 2):,.0f}")
+col4.metric("Silhouette Score", round(silhouette_score, 4))
 
 cluster_filter = st.sidebar.multiselect(
     "Filtrar por Cluster",
@@ -52,8 +52,8 @@ fig = px.scatter(
     x="precio",
     y="ingreso",
     color="prediction",
-    hover_data=["servicio", "barbero", "cantidad"],
-    title="Segmentación de Citas – UrbanBlade"
+    hover_data=["servicio", "barbero", "duracion_min", "estado"],
+    title="Segmentación de Citas – UrbanBlade (datos reales)"
 )
 st.plotly_chart(fig, use_container_width=True)
 
@@ -61,10 +61,11 @@ st.subheader("Visualización 3D")
 fig_3d = px.scatter_3d(
     data_filtrada,
     x="precio",
-    y="cantidad",
+    y="duracion_min",
     z="ingreso",
     color="prediction",
-    hover_name="servicio"
+    hover_name="servicio",
+    labels={"duracion_min": "Duración (min)"}
 )
 st.plotly_chart(fig_3d, use_container_width=True)
 
@@ -92,11 +93,13 @@ st.plotly_chart(fig_elbow, use_container_width=True)
 st.subheader("Interpretación Ejecutiva")
 resumen = data.groupby("prediction").mean(numeric_only=True)
 for cluster in resumen.index:
-    ingreso = resumen.loc[cluster, "ingreso"]
-    precio  = resumen.loc[cluster, "precio"]
+    ingreso   = resumen.loc[cluster, "ingreso"]
+    precio    = resumen.loc[cluster, "precio"]
+    duracion  = resumen.loc[cluster, "duracion_min"]
     st.markdown(f"### Cluster {cluster}")
     st.write(f"Ingreso promedio: ${round(ingreso, 2):,.0f}")
     st.write(f"Precio promedio: ${round(precio, 2):,.0f}")
+    st.write(f"Duración promedio: {round(duracion, 1)} min")
     if ingreso == resumen["ingreso"].max():
         st.success("Segmento Estratégico (Mayor ingreso)")
     elif precio == resumen["precio"].max():

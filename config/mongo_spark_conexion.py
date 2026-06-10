@@ -1,6 +1,5 @@
 import sys
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col
 from pyspark.ml.feature import VectorAssembler
 from pymongo import MongoClient
 from dotenv import load_dotenv
@@ -11,8 +10,6 @@ import pandas as pd
 
 
 def get_spark_session():
-
-    # Garantiza que workers usen el mismo Python que el driver (evita VERSION_MISMATCH)
     os.environ["PYSPARK_PYTHON"]        = sys.executable
     os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
 
@@ -23,7 +20,6 @@ def get_spark_session():
     password = quote_plus(os.getenv("MONGO_PASSWORD"))
     cluster  = os.getenv("MONGO_CLUSTER")
     database = os.getenv("MONGO_DB")
-    coll     = os.getenv("MONGO_COLLECTION")
 
     mongo_uri = f"mongodb+srv://{user}:{password}@{cluster}"
 
@@ -32,23 +28,53 @@ def get_spark_session():
         .config("spark.pyspark.python",        sys.executable) \
         .config("spark.pyspark.driver.python", sys.executable) \
         .getOrCreate()
-
     spark.sparkContext.setLogLevel("ERROR")
 
-    # PyMongo carga datos → Pandas → Spark DataFrame
-    client    = MongoClient(mongo_uri)
-    cursor    = client[database][coll].find(
+    # Join de 3 colecciones reales: appointments + services + barbers
+    client = MongoClient(mongo_uri)
+    db     = client[database]
+
+    appointments = list(db["appointments"].find(
         {},
-        {"_id": 0, "servicio": 1, "barbero": 1, "cantidad": 1, "precio": 1, "estado": 1}
-    )
-    pandas_df = pd.DataFrame(list(cursor))
+        {"_id": 0, "service_id": 1, "barber_id": 1,
+         "precio_cobrado": 1, "estado": 1, "fecha": 1}
+    ))
+    services_map = {
+        str(s["_id"]): s
+        for s in db["services"].find({}, {"_id": 1, "nombre": 1, "precio": 1, "duracion_min": 1})
+    }
+    barbers_map = {
+        str(b["_id"]): b
+        for b in db["barbers"].find({}, {"_id": 1, "nombre": 1})
+    }
     client.close()
 
+    records = []
+    for apt in appointments:
+        svc = services_map.get(str(apt.get("service_id", "")), {})
+        brb = barbers_map.get(str(apt.get("barber_id", "")), {})
+
+        precio_cobrado = apt.get("precio_cobrado")
+        precio_base    = float(svc.get("precio") or 0)
+        precio         = float(precio_cobrado) if precio_cobrado is not None else precio_base
+
+        records.append({
+            "servicio":    svc.get("nombre", "Desconocido"),
+            "barbero":     brb.get("nombre", "Desconocido"),
+            "duracion_min": float(svc.get("duracion_min") or 30),
+            "precio":      precio,
+            "estado":      str(apt.get("estado", "")),
+            "ingreso":     precio,
+            "fecha":       str(apt.get("fecha", "")),
+        })
+
+    pandas_df = pd.DataFrame(records)
+    print(f"Datos reales cargados desde MongoDB: {len(pandas_df)} citas")
+
     df = spark.createDataFrame(pandas_df)
-    df = df.withColumn("ingreso", col("cantidad") * col("precio"))
 
     assembler = VectorAssembler(
-        inputCols=["cantidad", "precio", "ingreso"],
+        inputCols=["duracion_min", "precio", "ingreso"],
         outputCol="features"
     )
     df_vector = assembler.transform(df)

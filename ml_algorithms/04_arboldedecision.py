@@ -12,19 +12,19 @@ spark, df, df_vector = get_spark_session()
 print("\nDataset UrbanBlade original")
 df.show()
 
-# Etiqueta: cita de ALTO VALOR (ingreso > 500) = 1, BAJO = 0
+# Etiqueta: cita de ALTO VALOR (ingreso > 500 MXN) = 1, BAJO = 0
 df = df.withColumn(
     "label",
     when(col("ingreso") > 500, 1).otherwise(0)
 )
 
 print("\nDataset con etiqueta")
-df.select("servicio", "cantidad", "precio", "ingreso", "label").show()
+df.select("servicio", "duracion_min", "precio", "ingreso", "label").show()
 
-df = df.dropna(subset=["cantidad", "precio", "ingreso"])
+df = df.dropna(subset=["duracion_min", "precio", "ingreso"])
 
 assembler = VectorAssembler(
-    inputCols=["cantidad", "precio", "ingreso"],
+    inputCols=["duracion_min", "precio", "ingreso"],
     outputCol="features",
     handleInvalid="skip"
 )

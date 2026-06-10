@@ -11,9 +11,10 @@ from pyspark.ml.evaluation import BinaryClassificationEvaluator
 
 spark, df, _ = get_spark_session()
 
-df = df.fillna({"cantidad": 0, "precio": 0, "ingreso": 0})
+df = df.fillna({"duracion_min": 30, "precio": 0, "ingreso": 0})
 
-# Label: cita cancelada = 1, completada/pendiente = 0
+# Label: cita cancelada = 1, cualquier otro estado = 0
+# Estados reales: pendiente, confirmada, en_proceso, completada, cancelada, no_asistio
 df = df.withColumn(
     "categoria",
     when(col("estado") == "cancelada", 1).otherwise(0)
@@ -22,7 +23,7 @@ df = df.withColumn(
 train_data, test_data = df.randomSplit([0.7, 0.3], seed=42)
 
 assembler = VectorAssembler(
-    inputCols=["cantidad", "precio", "ingreso"],
+    inputCols=["duracion_min", "precio", "ingreso"],
     outputCol="features",
     handleInvalid="skip"
 )
@@ -44,7 +45,7 @@ print("Pipeline entrenado correctamente")
 predictions = model.transform(test_data)
 print("\nEjemplo de predicciones:")
 predictions.select(
-    "servicio", "cantidad", "precio", "ingreso",
+    "servicio", "duracion_min", "precio", "ingreso",
     "prediction", "categoria", "probability"
 ).show(10)
 
@@ -59,7 +60,7 @@ predictions.groupBy("categoria", "prediction").count().show()
 
 rf_model = model.stages[-1]
 print("\nImportancia de variables:")
-nombres = ["cantidad", "precio", "ingreso"]
+nombres = ["duracion_min", "precio", "ingreso"]
 for i, imp in enumerate(rf_model.featureImportances):
     print(f"  {nombres[i]}: {imp:.4f}")
 
