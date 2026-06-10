@@ -49,9 +49,13 @@ spark/
 │   └── 07_red_neural.py                  ← Spark → PyTorch Red Neuronal
 │
 ├── analytics/                       ← Dashboards Streamlit interactivos
-│   ├── dashboard_kmeans.py               ← Segmentación con KMeans
+│   ├── dashboard_kmeans.py               ← Segmentación de citas con KMeans
 │   ├── dashboard_regresion_models.py     ← Predicción de ingresos
-│   └── dashboard_pca.py                  ← PCA + Clustering + IA
+│   ├── dashboard_pca.py                  ← PCA + Clustering + IA
+│   ├── dashboard_segmentacion_clientes.py← ★ Clientes VIP / Frecuente / Inactivo
+│   ├── dashboard_abandono.py             ← ★ Predicción de churn + score de riesgo
+│   ├── dashboard_recomendacion.py        ← ★ "También te puede interesar…"
+│   └── dashboard_demanda.py              ← ★ Horarios pico + predictor temporal
 │
 ├── data_ingestion/
 │   └── generar_datos_urbanblade.py       ← Semilla de datos de prueba (opcional)
@@ -62,13 +66,8 @@ spark/
 │
 └── docs/                            ← Documentación de resultados por algoritmo
     ├── README.md
-    ├── 01_mapreduce.md
-    ├── 02_kmeans.md
-    ├── 03_regresion.md
-    ├── 04_arbol_decision.md
-    ├── 05_bosque_aleatorio.md
-    ├── 06_pca.md
-    └── 07_red_neural.md
+    ├── 01_mapreduce.md ... 07_red_neural.md  ← Unidad III
+    └── unidad2_01_tipos_fuentes_datos.md ... unidad2_05_etl.md ← Unidad II
 ```
 
 ---
@@ -208,6 +207,22 @@ Proceso completo con tiempos medidos:
 ### Scripts de algoritmos
 
 ```bash
+# ── SISTEMA INTELIGENTE DE EXPERIENCIA PREMIUM ──────────────────────────────
+
+# Segmentación de clientes: VIP / Frecuente / Alto consumo / Inactivo
+python3 ml_algorithms/08_segmentacion_clientes.py
+
+# Predicción de abandono (churn): clientes que dejarán de asistir
+python3 ml_algorithms/09_prediccion_abandono.py
+
+# Recomendación de servicios: "también te puede interesar..."
+python3 ml_algorithms/10_recomendacion_servicios.py
+
+# Predicción de demanda: horarios pico, temporadas, días clave
+python3 ml_algorithms/11_prediccion_demanda.py
+
+# ── ALGORITMOS ML BASE ───────────────────────────────────────────────────────
+
 # MapReduce — ingresos totales por servicio
 python3 ml_algorithms/01_mapreduce.py
 
@@ -238,7 +253,23 @@ python3 ml_algorithms/07_red_neural.py
 ### Dashboards Streamlit interactivos
 
 ```bash
-# Dashboard de segmentación KMeans
+# ── SISTEMA INTELIGENTE (NUEVOS) ────────────────────────────────────────────
+
+# Segmentación de clientes premium (VIP / Frecuente / Alto consumo / Inactivo)
+streamlit run analytics/dashboard_segmentacion_clientes.py
+
+# Predicción de abandono con score de riesgo por cliente
+streamlit run analytics/dashboard_abandono.py
+
+# Recomendación de servicios (FP-Growth + simulador)
+streamlit run analytics/dashboard_recomendacion.py
+
+# Predicción de demanda + heatmap + predictor temporal
+streamlit run analytics/dashboard_demanda.py
+
+# ── ALGORITMOS BASE ──────────────────────────────────────────────────────────
+
+# Dashboard de segmentación KMeans de citas
 streamlit run analytics/dashboard_kmeans.py
 
 # Dashboard de predicción de ingresos (Random Forest)
