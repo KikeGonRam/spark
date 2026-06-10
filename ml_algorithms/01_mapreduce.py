@@ -12,7 +12,7 @@ print("=== MAPREDUCE – INGRESOS POR SERVICIO UrbanBlade ===")
 print("\n")
 
 # MAP → agrupa por servicio
-# REDUCE → suma ingresos
+# REDUCE → suma ingresos reales (precio_cobrado)
 df.groupBy("servicio") \
   .agg(sum("ingreso").alias("total_ingreso")) \
   .orderBy("total_ingreso", ascending=False) \

@@ -10,18 +10,19 @@ spark = SparkSession.builder \
     .appName("UrbanBlade-RedNeuronal") \
     .getOrCreate()
 
-# Dataset UrbanBlade (cantidad, precio, clase: 0=bajo, 1=medio, 2=alto)
+# Dataset representativo: (duracion_min, precio, clase: 0=bajo, 1=medio, 2=alto)
+# duracion_min: 20-60 min — precio: 100-650 MXN (rangos reales de barber_db)
 data = [
-    (1, 150, 0), (2, 300, 1), (1, 100, 0), (3, 450, 2),
-    (2, 200, 1), (1, 400, 2), (3, 600, 2), (1, 120, 0),
-    (2, 250, 1), (3, 750, 2), (1, 130, 0), (2, 280, 1),
-    (3, 500, 2), (1, 160, 0), (2, 320, 1), (3, 480, 2),
-    (1, 110, 0), (2, 220, 1), (3, 660, 2), (1, 140, 0)
+    (20, 150, 0), (30, 300, 1), (20, 100, 0), (60, 450, 2),
+    (30, 200, 1), (20, 400, 2), (60, 600, 2), (20, 120, 0),
+    (45, 250, 1), (60, 650, 2), (20, 130, 0), (45, 280, 1),
+    (60, 500, 2), (20, 160, 0), (30, 320, 1), (60, 480, 2),
+    (20, 110, 0), (30, 220, 1), (60, 620, 2), (20, 140, 0)
 ]
-columns = ["cantidad", "precio", "label"]
+columns = ["duracion_min", "precio", "label"]
 df = spark.createDataFrame(data, columns)
 
-assembler = VectorAssembler(inputCols=["cantidad", "precio"], outputCol="features")
+assembler = VectorAssembler(inputCols=["duracion_min", "precio"], outputCol="features")
 df_vector = assembler.transform(df)
 
 scaler       = StandardScaler(inputCol="features", outputCol="scaledFeatures",
@@ -74,13 +75,13 @@ with torch.no_grad():
 
 print(f"Precisión: {accuracy * 100:.2f}%")
 
-# Predicción de cita nueva
-labels_map = {0: "Ingreso bajo", 1: "Ingreso medio", 2: "Ingreso alto"}
-nuevo = torch.tensor([[2.0, 250.0]])
+# Predicción de cita nueva: 45 min, $300 MXN
+labels_map = {0: "Ingreso bajo (<$200)", 1: "Ingreso medio ($200-$450)", 2: "Ingreso alto (>$450)"}
+nuevo = torch.tensor([[45.0, 300.0]])
 with torch.no_grad():
     prob  = torch.softmax(model(nuevo), dim=1)
     clase = torch.argmax(prob).item()
-print(f"Clase predicha: {labels_map[clase]}")
+print(f"Cita 45min/$300: {labels_map[clase]}")
 print(f"Probabilidades: {prob.numpy()}")
 
 spark.stop()

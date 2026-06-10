@@ -13,10 +13,10 @@ import plotly.io as pio
 
 spark, df, df_vector = get_spark_session()
 
-df = df.fillna({"cantidad": 0, "precio": 0, "ingreso": 0})
+df = df.fillna({"duracion_min": 30, "precio": 0, "ingreso": 0})
 
 assembler = VectorAssembler(
-    inputCols=["cantidad", "precio", "ingreso"],
+    inputCols=["duracion_min", "precio", "ingreso"],
     outputCol="features",
     handleInvalid="skip"
 )
@@ -57,8 +57,8 @@ for i, c in enumerate(kmeans_model.clusterCenters()):
 def interpretar_cluster(centroid):
     pc1, pc2 = centroid
     desc = []
-    desc.append("valores ALTOS en servicios/precio/ingreso" if pc1 > 0
-                 else "valores BAJOS en servicios/precio/ingreso")
+    desc.append("duración/precio/ingreso ALTOS" if pc1 > 0
+                 else "duración/precio/ingreso BAJOS")
     desc.append("segunda componente POSITIVA" if pc2 > 0
                  else "segunda componente NEGATIVA")
     return ", ".join(desc)
@@ -71,12 +71,12 @@ for i, c in enumerate(kmeans_model.clusterCenters()):
 print("\nPesos de los componentes principales:")
 print(pca_model.pc)
 
-# 6. SOLUCIÓN ERROR DenseVector → lista Python
+# 6. DenseVector → lista Python
 vector_to_array = udf(lambda v: v.toArray().tolist(), ArrayType(DoubleType()))
 df_final = df_cluster.withColumn("pcaArray", vector_to_array("pcaFeatures"))
 
 print("\nGenerando DataFrame para visualización...")
-pdf = df_final.select("pcaArray", "cluster").toPandas()
+pdf = df_final.select("pcaArray", "cluster", "servicio", "barbero").toPandas()
 pdf["PC1"] = pdf["pcaArray"].apply(lambda x: x[0])
 pdf["PC2"] = pdf["pcaArray"].apply(lambda x: x[1])
 
@@ -87,7 +87,8 @@ fig = px.scatter(
     x="PC1",
     y="PC2",
     color=pdf["cluster"].astype(str),
-    title="PCA + KMeans – UrbanBlade"
+    hover_data=["servicio", "barbero"],
+    title="PCA + KMeans – UrbanBlade (datos reales)"
 )
 pio.renderers.default = "browser"
 fig.show()

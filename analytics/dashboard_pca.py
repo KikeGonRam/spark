@@ -27,7 +27,7 @@ def interpretar_clusters(perfil_df):
         cluster  = int(row["cluster"])
         ingreso  = row["avg_ingreso"]
         precio   = row["avg_precio"]
-        cantidad = row["avg_cantidad"]
+        duracion = row["avg_duracion"]
 
         texto = f"Cluster {cluster}:\n"
 
@@ -37,12 +37,12 @@ def interpretar_clusters(perfil_df):
         texto += "- Precio de servicio alto\n" if precio > avg_global["avg_precio"] \
             else "- Precio de servicio económico\n"
 
-        texto += "- Solicita varios servicios\n" if cantidad > avg_global["avg_cantidad"] \
-            else "- Solicita pocos servicios\n"
+        texto += "- Servicios de larga duración\n" if duracion > avg_global["avg_duracion"] \
+            else "- Servicios rápidos\n"
 
         if ingreso > avg_global["avg_ingreso"] and precio > avg_global["avg_precio"]:
             perfil = "Cliente Premium"
-        elif ingreso < avg_global["avg_ingreso"] and cantidad > avg_global["avg_cantidad"]:
+        elif ingreso < avg_global["avg_ingreso"] and duracion > avg_global["avg_duracion"]:
             perfil = "Cliente Frecuente Económico"
         else:
             perfil = "Cliente Estándar"
@@ -66,10 +66,10 @@ if st.button("Ejecutar análisis"):
 
     spark, df, _ = get_spark_session()
 
-    df = df.fillna({"cantidad": 0, "precio": 0, "ingreso": 0})
+    df = df.fillna({"duracion_min": 30, "precio": 0, "ingreso": 0})
 
     assembler = VectorAssembler(
-        inputCols=["cantidad", "precio", "ingreso"],
+        inputCols=["duracion_min", "precio", "ingreso"],
         outputCol="features",
         handleInvalid="skip"
     )
@@ -99,21 +99,22 @@ if st.button("Ejecutar análisis"):
     df_cluster = df_cluster.withColumn("PC2", col("pcaArray")[1])
 
     pdf = df_cluster.select(
-        "PC1", "PC2", "cluster", "cantidad", "precio", "ingreso"
+        "PC1", "PC2", "cluster", "duracion_min", "precio", "ingreso", "servicio", "barbero"
     ).toPandas()
 
-    st.subheader("Mapa de clusters – Citas UrbanBlade")
+    st.subheader("Mapa de clusters – Citas UrbanBlade (datos reales)")
     fig = px.scatter(
         pdf,
         x="PC1",
         y="PC2",
         color=pdf["cluster"].astype(str),
+        hover_data=["servicio", "barbero", "precio", "duracion_min"],
         title="Segmentación de Citas – PCA + KMeans"
     )
     st.plotly_chart(fig, use_container_width=True)
 
     perfil = df_cluster.groupBy("cluster").agg(
-        avg("cantidad").alias("avg_cantidad"),
+        avg("duracion_min").alias("avg_duracion"),
         avg("precio").alias("avg_precio"),
         avg("ingreso").alias("avg_ingreso")
     ).toPandas()
