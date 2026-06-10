@@ -90,7 +90,18 @@ Resultados de la ejecución del 10 de junio de 2026 — scripts `unidad2/`.
 
 ---
 
-## Documentación — Unidad III: Algoritmos ML
+## Documentación — Sistema Inteligente de Experiencia Premium
+
+| Archivo | Contenido |
+|---------|-----------|
+| [08_segmentacion_clientes.md](08_segmentacion_clientes.md) | KMeans k=4 — VIP / Alto consumo / Frecuente / Inactivo |
+| [09_prediccion_abandono.md](09_prediccion_abandono.md) | Random Forest churn — score de riesgo 0–100 por cliente |
+| [10_recomendacion_servicios.md](10_recomendacion_servicios.md) | FP-Growth — reglas de asociación + simulador |
+| [11_prediccion_demanda.md](11_prediccion_demanda.md) | GBT + heatmap — horarios pico / temporadas |
+
+---
+
+## Documentación — Unidad III: Algoritmos ML Base
 
 | Archivo | Contenido |
 |---------|-----------|

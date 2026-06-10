@@ -25,7 +25,6 @@ db_name = os.getenv("MONGO_DB")
 
 st.set_page_config(
     page_title="UrbanBlade — Recomendación de Servicios",
-    page_icon="💡",
     layout="wide"
 )
 
@@ -110,7 +109,7 @@ if df_citas.empty:
     st.stop()
 
 # ── HEADER ─────────────────────────────────────────────────────────────────────
-st.title("💡 UrbanBlade — Recomendación de Servicios")
+st.title("UrbanBlade — Recomendación de Servicios")
 st.markdown("Descubre qué servicios adicionales ofrecerle a cada cliente según su historial de compras.")
 st.divider()
 
@@ -189,7 +188,7 @@ with col_right:
 
 # ── SIMULADOR DE RECOMENDACIÓN ─────────────────────────────────────────────────
 st.divider()
-st.subheader("🔍 Simulador: ¿Qué recomendar?")
+st.subheader("Simulador: que recomendar")
 
 col_sim1, col_sim2 = st.columns(2)
 with col_sim1:
@@ -205,24 +204,22 @@ with col_sim2:
         if not sugerencias.empty:
             st.markdown("**Servicios a recomendar:**")
             for _, row in sugerencias.head(3).iterrows():
-                lift_icon = "🔥" if row["lift"] >= 2 else "✅" if row["lift"] >= 1.2 else "💡"
                 st.success(
-                    f"{lift_icon} **{row['recomendar']}**  \n"
+                    f"**{row['recomendar']}**  \n"
                     f"Confianza: {row['confianza']}% | Lift: {row['lift']} | "
-                    f"{int(row['co_ocurrencias'])} clientes en común"
+                    f"{int(row['co_ocurrencias'])} clientes en comun"
                 )
         else:
             st.info("No hay reglas para este servicio con los umbrales actuales.")
     else:
-        # Fallback: mostrar los más populares de la misma categoría
         cat_sel = df_citas[df_citas["servicio"] == servicio_sel]["categoria"].iloc[0] \
             if len(df_citas[df_citas["servicio"] == servicio_sel]) > 0 else ""
         otros = df_citas[
             (df_citas["categoria"] == cat_sel) & (df_citas["servicio"] != servicio_sel)
         ]["servicio"].value_counts().head(3)
-        st.markdown("**Más populares en la misma categoría:**")
+        st.markdown("**Mas populares en la misma categoria:**")
         for svc, cnt in otros.items():
-            st.info(f"💡 **{svc}** — {cnt} citas")
+            st.info(f"**{svc}** — {cnt} citas")
 
 # ── MAPA DE CALOR: CO-OCURRENCIA ───────────────────────────────────────────────
 st.divider()

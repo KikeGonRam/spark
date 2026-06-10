@@ -29,7 +29,6 @@ MESES = {1:"Ene",2:"Feb",3:"Mar",4:"Abr",5:"May",6:"Jun",
 
 st.set_page_config(
     page_title="UrbanBlade — Predicción de Demanda",
-    page_icon="📊",
     layout="wide"
 )
 
@@ -85,7 +84,7 @@ if df.empty:
     st.stop()
 
 # ── HEADER ─────────────────────────────────────────────────────────────────────
-st.title("📊 UrbanBlade — Predicción de Demanda")
+st.title("UrbanBlade — Predicción de Demanda")
 st.markdown("Anticipa los horarios pico, temporadas de alta demanda y días con mayor ingreso.")
 
 col1, col2, col3, col4 = st.columns(4)
@@ -105,7 +104,7 @@ st.divider()
 
 # ── TABS ───────────────────────────────────────────────────────────────────────
 tab1, tab2, tab3, tab4 = st.tabs(
-    ["⏰ Por horario", "📅 Por día", "🗓️ Por mes/temporada", "🔮 Predictor"]
+    ["Por horario", "Por día", "Por mes / temporada", "Predictor de demanda"]
 )
 
 # ── TAB 1: HORARIOS ────────────────────────────────────────────────────────────
@@ -307,7 +306,7 @@ with tab4:
         st.metric("Estimación de demanda", f"{estimacion:.1f} citas",
                   help="Basada en patrones históricos")
     with col_r3:
-        nivel = "🔴 ALTO" if estimacion > 3 else "🟡 MEDIO" if estimacion > 1.5 else "🟢 BAJO"
+        nivel = "ALTO" if estimacion > 3 else "MEDIO" if estimacion > 1.5 else "BAJO"
         st.metric("Nivel de demanda", nivel)
 
     if estimacion > 3:
@@ -319,17 +318,21 @@ with tab4:
         st.success(f"**Baja demanda** — Buen momento para mantenimiento / capacitación.")
 
     # Comparativa del día seleccionado
-    st.subheader(f"Curva de demanda — {DIAS[dia_sel]} en {MESES[mes_sel]}")
+    st.subheader(f"Curva de demanda — {DIAS.get(dia_sel, '')} en {MESES.get(mes_sel, '')}")
     curva = df[(df["mes"] == mes_sel) & (df["dia_semana"] == dia_sel)] \
         .groupby("hora").size().reset_index(name="citas")
 
     if not curva.empty:
         fig_curva = px.area(
-            curva, x=[f"{h:02d}:00" for h in curva["hora"]], y="citas",
+            curva, x="hora", y="citas",
             color_discrete_sequence=["#1565C0"],
-            labels={"x": "Hora", "citas": "Citas"},
+            labels={"hora": "Hora", "citas": "Citas"},
         )
-        fig_curva.add_vline(x=f"{hora_sel:02d}:00",
+        fig_curva.update_xaxes(
+            tickvals=curva["hora"].tolist(),
+            ticktext=[f"{int(h):02d}:00" for h in curva["hora"]],
+        )
+        fig_curva.add_vline(x=hora_sel,
                             line_dash="dash", line_color="red",
                             annotation_text="Hora seleccionada")
         fig_curva.update_layout(height=300)

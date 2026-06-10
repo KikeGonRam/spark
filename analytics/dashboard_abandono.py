@@ -24,7 +24,6 @@ db_name = os.getenv("MONGO_DB")
 
 st.set_page_config(
     page_title="UrbanBlade — Predicción de Abandono",
-    page_icon="🚨",
     layout="wide"
 )
 
@@ -108,7 +107,7 @@ if df_citas.empty:
 df, umbral_dias, umbral_cancel = compute_churn(df_citas)
 
 # ── HEADER ─────────────────────────────────────────────────────────────────────
-st.title("🚨 UrbanBlade — Predicción de Abandono de Clientes")
+st.title("UrbanBlade — Predicción de Abandono de Clientes")
 st.markdown("Detecta clientes que podrían dejar de asistir antes de que suceda.")
 
 col1, col2, col3, col4 = st.columns(4)
@@ -118,11 +117,11 @@ sin_riesgo = df[df["en_riesgo"] == 0]
 with col1:
     st.metric("Total clientes", len(df))
 with col2:
-    st.metric("⚠️ En riesgo", len(en_riesgo),
+    st.metric("En riesgo", len(en_riesgo),
               delta=f"{len(en_riesgo)/len(df)*100:.0f}% del total",
               delta_color="inverse")
 with col3:
-    st.metric("✅ Estables", len(sin_riesgo))
+    st.metric("Estables", len(sin_riesgo))
 with col4:
     ingresos_riesgo = en_riesgo["gasto_total"].sum()
     st.metric("Ingresos en riesgo", f"${ingresos_riesgo:,.0f}",
@@ -131,7 +130,7 @@ with col4:
 st.divider()
 
 # ── PARÁMETROS ─────────────────────────────────────────────────────────────────
-with st.expander("⚙️ Ajustar umbrales de riesgo"):
+with st.expander("Ajustar umbrales de riesgo"):
     col_p1, col_p2 = st.columns(2)
     with col_p1:
         umbral_d = st.slider("Días sin cita → EN RIESGO si >",
@@ -228,19 +227,19 @@ if len(en_riesgo) > 0:
     col_act1, col_act2, col_act3 = st.columns(3)
     with col_act1:
         high = df_risk_show[df_risk_show["Score riesgo"] >= 70]
-        st.error(f"🔴 URGENTE: {len(high)} cliente(s)\nLlamar hoy + oferta especial")
+        st.error(f"URGENTE: {len(high)} cliente(s) — Llamar hoy + oferta especial")
     with col_act2:
         med = df_risk_show[(df_risk_show["Score riesgo"] >= 40) & (df_risk_show["Score riesgo"] < 70)]
-        st.warning(f"🟡 ATENCIÓN: {len(med)} cliente(s)\nWhatsApp + descuento 15%")
+        st.warning(f"ATENCION: {len(med)} cliente(s) — WhatsApp + descuento 15%")
     with col_act3:
         low = df_risk_show[df_risk_show["Score riesgo"] < 40]
-        st.info(f"🟢 PREVENTIVO: {len(low)} cliente(s)\nNewsletter + recordatorio")
+        st.info(f"PREVENTIVO: {len(low)} cliente(s) — Newsletter + recordatorio")
 else:
     st.success("¡Ningún cliente en riesgo con los umbrales actuales!")
 
 # ── CLIENTES ESTABLES ──────────────────────────────────────────────────────────
 st.divider()
-with st.expander("✅ Ver clientes estables"):
+with st.expander("Ver clientes estables"):
     st.dataframe(
         sin_riesgo.sort_values("gasto_total", ascending=False)[[
             "nombre", "total_citas", "gasto_total", "tasa_cancelacion", "dias_sin_cita"
