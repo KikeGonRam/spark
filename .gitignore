@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+*.log
+modelo_pipeline_rf_urbanblade/
+.DS_Store
+.idea/
+*.iml
+spark-warehouse/
+derby.log
