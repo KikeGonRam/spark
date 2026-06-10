@@ -9,6 +9,19 @@ from urllib.parse import quote_plus
 import pandas as pd
 
 
+def _resolve_barbero(brb: dict, users_map: dict) -> str:
+    """Obtiene el nombre del barbero.
+
+    El BarberFactory no llena el campo 'nombre', así que se resuelve
+    a través de users.name usando el user_id del barbero.
+    """
+    nombre = brb.get("nombre")
+    if nombre:
+        return nombre
+    uid = str(brb.get("user_id", ""))
+    return users_map.get(uid, {}).get("name", "Sin nombre")
+
+
 def get_spark_session():
     os.environ["PYSPARK_PYTHON"]        = sys.executable
     os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
@@ -30,7 +43,7 @@ def get_spark_session():
         .getOrCreate()
     spark.sparkContext.setLogLevel("ERROR")
 
-    # Join de 3 colecciones reales: appointments + services + barbers
+    # Join de 4 colecciones: appointments + services + barbers + users
     client = MongoClient(mongo_uri)
     db     = client[database]
 
@@ -45,7 +58,11 @@ def get_spark_session():
     }
     barbers_map = {
         str(b["_id"]): b
-        for b in db["barbers"].find({}, {"_id": 1, "nombre": 1})
+        for b in db["barbers"].find({}, {"_id": 1, "nombre": 1, "user_id": 1})
+    }
+    users_map = {
+        str(u["_id"]): u
+        for u in db["users"].find({}, {"_id": 1, "name": 1})
     }
     client.close()
 
@@ -60,7 +77,7 @@ def get_spark_session():
 
         records.append({
             "servicio":    svc.get("nombre", "Desconocido"),
-            "barbero":     brb.get("nombre", "Desconocido"),
+            "barbero":     _resolve_barbero(brb, users_map),
             "duracion_min": float(svc.get("duracion_min") or 30),
             "precio":      precio,
             "estado":      str(apt.get("estado", "")),
