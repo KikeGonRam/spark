@@ -10,7 +10,7 @@ from pyspark.ml.feature import VectorAssembler, StandardScaler, PCA
 from pyspark.ml.clustering import KMeans
 from pyspark.sql.functions import col, avg
 from pyspark.ml.functions import vector_to_array
-from config.mongo_spark_conexion import get_spark_session
+from config.mongo_spark_conexion_sinnulos import get_spark_session
 
 st.set_page_config(page_title="Dashboard PCA – UrbanBlade", layout="wide")
 st.title("Dashboard Inteligente: PCA + Clustering + IA | UrbanBlade")

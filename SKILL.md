@@ -41,20 +41,27 @@ MongoDB Atlas, procesa datos y alimenta dashboards Streamlit.
 
 ---
 
-## Colecciones MongoDB UrbanBlade
+## Colecciones MongoDB UrbanBlade (barber_db — REAL)
 
 ```
-appointments  → _id, servicio, cantidad (num_personas), precio, ingreso, barbero, estado, fecha
+appointments  → _id, service_id, barber_id, client_id, precio_cobrado,
+                estado (pendiente|confirmada|en_proceso|completada|cancelada|no_asistio),
+                fecha (UTCDateTime), hora_inicio, hora_fin, code
+
 services      → _id, nombre, duracion_min, precio, activo
-staff         → _id, nombre, especialidad, rating_avg, activo
-users         → _id, nombre, email, rol (admin|barber|client)
-reviews       → _id, cliente_id, barbero_id, cita_id, rating, comentario
+barbers       → _id, user_id, activo
+users         → _id, name, email, role (admin|barber|client)
+clients       → _id, user_id, nivel, puntos_lealtad, slug
+payments      → _id, appointment_id, monto, propina, metodo_pago, created_at
+loyalty_transactions → _id, client_id, points, type, created_at
+products      → _id, nombre, categoria, tipo, stock_actual, stock_minimo, precio_venta
 ```
 
-> **Nota**: Los campos `cantidad` (número de personas/servicios), `precio` y
-> `ingreso = cantidad * precio` son el equivalente UrbanBlade a los campos del
-> modelo del profesor (`cantidad`, `precio`, `ingreso`). Esto permite reutilizar
-> exactamente sus patrones.
+> **Schema real del barber Laravel**: los scripts usan PyMongo para hacer JOIN de
+> `appointments + services + barbers + users` y producen el DataFrame Spark con las
+> columnas: `servicio, barbero, duracion_min, precio, estado, ingreso, fecha`.
+> `ingreso = precio_cobrado` (lo que realmente pagó el cliente).
+> Features para ML: `["duracion_min", "precio", "ingreso"]`
 
 ---
 
@@ -105,81 +112,33 @@ MONGO_COLLECTION=appointments
 ## PATRÓN BASE — `config/mongo_spark_conexion_sinnulos.py`
 
 **ESTE ES EL ARCHIVO MÁS IMPORTANTE. Todos los scripts lo importan.**
-Adaptado exactamente del patrón del profesor para UrbanBlade.
+Usa PyMongo para hacer JOIN real de 4 colecciones (appointments + services + barbers + users),
+luego construye el DataFrame Spark con los campos correctos del barber_db.
 
 ```python
-# config/mongo_spark_conexion_sinnulos.py
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col
-from pyspark.ml.feature import VectorAssembler
-from dotenv import load_dotenv
-from pathlib import Path
-import os
-from urllib.parse import quote_plus
+# config/mongo_spark_conexion_sinnulos.py  (versión actualizada — con dropna y handleInvalid)
+# Conecta a MongoDB Atlas via PyMongo, hace JOIN de 4 colecciones,
+# crea DataFrame Spark con: servicio, barbero, duracion_min, precio, estado, ingreso, fecha
+# Features: ["duracion_min", "precio", "ingreso"]   (NO "cantidad" — ese campo no existe en barber_db)
+# Devuelve: (spark, df, df_vector)
 
-
-def get_spark_session():
-
-    # 1. Cargar variables de entorno desde /spark/.env
-    env_path = Path(__file__).resolve().parent.parent / ".env"
-    load_dotenv(dotenv_path=env_path)
-
-    user            = os.getenv("MONGO_USER")
-    password        = quote_plus(os.getenv("MONGO_PASSWORD"))
-    cluster         = os.getenv("MONGO_CLUSTER")
-    database        = os.getenv("MONGO_DB")
-    collection_name = os.getenv("MONGO_COLLECTION")
-
-    mongo_uri = f"mongodb+srv://{user}:{password}@{cluster}"
-
-    # 2. Crear sesión Spark
-    spark = SparkSession.builder \
-        .appName("UrbanBlade-BigData") \
-        .config("spark.jars.packages",
-                "org.mongodb.spark:mongo-spark-connector_2.13:10.3.0") \
-        .config("spark.mongodb.read.connection.uri",  mongo_uri) \
-        .config("spark.mongodb.read.database",        database) \
-        .config("spark.mongodb.read.collection",      collection_name) \
-        .config("spark.mongodb.write.connection.uri", mongo_uri) \
-        .getOrCreate()
-
-    spark.sparkContext.setLogLevel("ERROR")
-
-    # 3. Leer datos
-    df = spark.read.format("mongodb").load()
-    print("Datos UrbanBlade cargados desde MongoDB")
-    df.show(10)
-
-    # 4. Limpieza y tipado (CRÍTICO)
-    df = df.select(
-        col("servicio"),
-        col("barbero"),
-        col("cantidad").cast("double"),   # número de servicios/personas
-        col("precio").cast("double"),      # precio unitario del servicio
-        col("estado")
-    )
-
-    # 5. Eliminar nulos antes de crear features
-    df = df.dropna(subset=["cantidad", "precio"])
-
-    # 6. Feature Engineering — ingreso = cantidad * precio (patrón del profesor)
-    df = df.withColumn("ingreso", col("cantidad") * col("precio"))
-
-    # 7. Vectorización segura
-    assembler = VectorAssembler(
-        inputCols=["cantidad", "precio", "ingreso"],
-        outputCol="features",
-        handleInvalid="skip"   # SIEMPRE incluir — evita crash con nulos
-    )
-
-    df_vector = assembler.transform(df)
-
-    return spark, df, df_vector
+# Campos disponibles en df:
+#   servicio   (str)  — nombre del servicio (de services.nombre)
+#   barbero    (str)  — nombre del barbero  (de users.name vía barbers.user_id)
+#   duracion_min (double) — duración del servicio en minutos
+#   precio     (double)   — precio cobrado (appointments.precio_cobrado)
+#   estado     (str)      — estado de la cita (completada, cancelada, etc.)
+#   ingreso    (double)   — igual que precio (ingreso real por cita)
+#   fecha      (str)      — fecha de la cita como string
 ```
 
 > **Regla crítica**: `get_spark_session()` siempre devuelve `(spark, df, df_vector)`.
 > Desempaquetar igual que el profesor: `spark, df, df_vector = get_spark_session()`
 > o `spark, df, _ = get_spark_session()` si no necesitas el vector.
+>
+> **NO usar `cantidad`** — ese campo no existe en appointments de barber_db.
+> Usar `duracion_min` como feature principal (viene de services.duracion_min).
+> `ingreso = precio_cobrado` del appointment, NO `cantidad × precio`.
 
 ---
 
@@ -390,6 +349,9 @@ if __name__ == "__main__":
 
 ### `ml_algorithms/03_regresion_analytics.py` — 6 modelos de regresión
 
+Evalúa R², MSE (Error Cuadrático Medio) y MAE (Error Absoluto Medio) para cada modelo,
+tal como requiere la Unidad III del programa.
+
 ```python
 from config.mongo_spark_conexion_sinnulos import get_spark_session
 from pyspark.ml.feature import VectorAssembler, PolynomialExpansion
@@ -399,16 +361,21 @@ from pyspark.ml.tuning import CrossValidator, ParamGridBuilder
 import matplotlib.pyplot as plt
 
 spark, df, _ = get_spark_session()
-print("Dataset UrbanBlade cargado")
-df.show()
-
+# df tiene: servicio, barbero, duracion_min, precio, estado, ingreso, fecha
 train, test = df.randomSplit([0.8, 0.2], seed=42)
 
-evaluator = RegressionEvaluator(
-    labelCol="ingreso",
-    predictionCol="prediction",
-    metricName="r2"
-)
+# Evalúa las 3 métricas requeridas por Unidad III
+def evaluar(predictions, label="ingreso"):
+    r2  = RegressionEvaluator(labelCol=label, metricName="r2").evaluate(predictions)
+    mse = RegressionEvaluator(labelCol=label, metricName="mse").evaluate(predictions)
+    mae = RegressionEvaluator(labelCol=label, metricName="mae").evaluate(predictions)
+    return r2, mse, mae
+# Modelo 1: VectorAssembler(inputCols=["duracion_min"])  → Lineal Simple
+# Modelo 2: VectorAssembler(inputCols=["duracion_min","precio"]) → Múltiple
+# Modelos 3–4: Ridge / Lasso con regParam=0.5
+# Modelo 5: PolynomialExpansion(degree=2)
+# Modelo 6: CrossValidator(numFolds=3, paramGrid)
+# Salida: tabla comparativa con R²/MSE/MAE + interpretación automática
 
 
 def graficar(predictions, titulo):
