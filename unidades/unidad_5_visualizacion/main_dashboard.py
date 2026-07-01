@@ -663,8 +663,10 @@ with tabs[3]:
     with col_a:
         # Matriz de confusión como heatmap
         labels_map = {0: "No cancela", 1: "Cancela"}
-        conf_dt["label_str"]      = conf_dt["label"].map(labels_map)
-        conf_dt["prediction_str"] = conf_dt["prediction"].map(labels_map)
+        conf_dt = conf_dt.assign(
+            label_str=conf_dt["label"].map(labels_map),
+            prediction_str=conf_dt["prediction"].map(labels_map),
+        )
         pivot = conf_dt.pivot(index="label_str", columns="prediction_str", values="count").fillna(0)
         fig = px.imshow(pivot, text_auto=True, color_continuous_scale=[[0, DARK], [1, GOLD]],
                         title="Matriz de Confusión — Árbol de Decisión",
@@ -735,8 +737,10 @@ with tabs[4]:
 
     with col_a:
         labels_rf = {0: "No cancela", 1: "Cancela"}
-        conf_rf["cat_str"]  = conf_rf["categoria"].map(labels_rf)
-        conf_rf["pred_str"] = conf_rf["prediction"].map(labels_rf)
+        conf_rf = conf_rf.assign(
+            cat_str=conf_rf["categoria"].map(labels_rf),
+            pred_str=conf_rf["prediction"].map(labels_rf),
+        )
         pivot_rf = conf_rf.pivot(index="cat_str", columns="pred_str", values="count").fillna(0)
         fig = px.imshow(pivot_rf, text_auto=True, color_continuous_scale=[[0, DARK], [1, RED]],
                         title="Matriz de Confusión — Random Forest",
