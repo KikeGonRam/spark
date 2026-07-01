@@ -88,20 +88,13 @@ loyalty_transactions → _id, client_id, puntos, tipo
 │   └── mongo_spark_conexion_sinnulos.py   ← Conexión limpia (sin nulos) ← USAR ESTA
 ├── data_ingestion/
 │   └── generar_datos_urbanblade.py        ← Poblar MongoDB con datos de prueba
-├── ml_algorithms/
-│   ├── 01_mapreduce.py                    ← Unidad II – ETL/MapReduce
-│   ├── 02_kmeans.py                       ← Unidad IV – Clustering
-│   ├── 03_regresion_analytics.py          ← Unidad III – Regresión (6 modelos)
-│   ├── 04_arboldedecision.py              ← Unidad III – Árbol de Decisión
-│   ├── 05_bosque_aleatorio.py             ← Unidad III – Random Forest
-│   ├── 06_pca.py                          ← Unidad IV – PCA + KMeans
-│   └── 07_red_neural.py                   ← Unidad III/IV – Red Neuronal PyTorch
-├── analytics/
-│   ├── dashboard_kmeans.py                ← Unidad V – Dashboard KMeans
-│   ├── dashboard_regresion_models.py      ← Unidad V – Dashboard Regresión
-│   └── dashboard_pca.py                   ← Unidad V – Dashboard PCA
-├── processing/
-│   └── (utilidades y consultas)
+├── data/etl_output/                       # salida ETL (Parquet/CSV) - en .gitignore
+├── unidades/                              # TODO ORDENADO POR UNIDAD (ver unidades/README.md)
+│   ├── unidad_1_introduccion/            # I   comparativa + caso de estudio (docs)
+│   ├── unidad_2_preparacion/             # II  01-05 (tipos, DW, limpieza, mineria, ETL) + 06-07 MapReduce
+│   ├── unidad_3_supervisado/             # III regresion, arbol, bosque, red neuronal, churn, demanda
+│   ├── unidad_4_no_supervisado/          # IV  kmeans, pca, segmentacion, recomendacion
+│   └── unidad_5_visualizacion/           # V   main_dashboard.py + dashboard_matplotlib.py
 ├── .env
 └── requirements.txt
 ```
