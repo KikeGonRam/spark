@@ -1,11 +1,11 @@
-"""
+﻿"""
 Unidad IV – Análisis No Supervisado
 Script  : 06_pca.py
 Tema    : Reducción de dimensionalidad con PCA + Clustering KMeans sobre componentes
 Métricas: Varianza explicada, Silhouette Score, interpretación de componentes principales
 Datos   : MongoDB Atlas → barber_db (appointments + services + barbers + users)
-Alumno  : KikeGonRam (Luis Enrique González Ramírez)
-Materia : Extracción del conocimiento en bases de datos – UTVT IDGS-84
+Equipo  : Equipo UrbanBlade
+Materia : Extracción del conocimiento en bases de datos – UTVT IDGS-93
 Docente : MGTI. Héctor Velázquez Estrada
 """
 import sys

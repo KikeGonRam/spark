@@ -1,8 +1,8 @@
----
+﻿---
 name: spark-urbanblade
 description: >
   Skill para el proyecto UrbanBlade en la materia "Extracción del conocimiento en
-  bases de datos" (UTVT, IDGS-84, Prof. Héctor Velázquez Estrada, Mayo–Agosto 2026).
+  bases de datos" (UTVT, IDGS-93, Prof. Héctor Velázquez Estrada, Mayo–Agosto 2026).
   Cubre las 5 unidades del programa usando los patrones EXACTOS del profesor:
   conexión MongoDB Atlas con get_spark_session(), MapReduce, KMeans, Regresión (6 modelos),
   Árbol de Decisión, Bosque Aleatorio, PCA + KMeans, Red Neuronal PyTorch, dashboards
@@ -15,15 +15,15 @@ description: >
   "mongo spark", "get_spark_session", "ingreso", "features", "VectorAssembler".
 stack: PySpark 3.5.x, MongoDB Atlas, Python 3.11+, Streamlit, Plotly, PyTorch
 project: UrbanBlade – Sistema de gestión de barbería
-course: Extracción del conocimiento en bases de datos – UTVT IDGS-84
+course: Extracción del conocimiento en bases de datos – UTVT IDGS-93
 teacher: MGTI. Héctor Velázquez Estrada
 period: Mayo–Agosto 2026
 env: WSL Ubuntu
-author: KikeGonRam (Luis Enrique González Ramírez)
+author: Equipo UrbanBlade
 ---
 
 # Spark + MongoDB – UrbanBlade
-## Materia: Extracción del conocimiento en bases de datos | UTVT IDGS-84
+## Materia: Extracción del conocimiento en bases de datos | UTVT IDGS-93
 ## Entorno: WSL Ubuntu | Directorio raíz: /spark/
 
 ---

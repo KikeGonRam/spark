@@ -1,11 +1,11 @@
-"""
+﻿"""
 Unidad III – Análisis Supervisado
 Script  : 04_arboldedecision.py
 Tema    : Clasificación con Árbol de Decisión — citas de alto valor (ingreso > $500 MXN)
 Métricas: Accuracy, Precision, Recall, F1-Score  (requeridas Unidad III)
 Datos   : MongoDB Atlas → barber_db (appointments + services + barbers + users)
-Alumno  : KikeGonRam (Luis Enrique González Ramírez)
-Materia : Extracción del conocimiento en bases de datos – UTVT IDGS-84
+Equipo  : Equipo UrbanBlade
+Materia : Extracción del conocimiento en bases de datos – UTVT IDGS-93
 Docente : MGTI. Héctor Velázquez Estrada
 """
 import sys

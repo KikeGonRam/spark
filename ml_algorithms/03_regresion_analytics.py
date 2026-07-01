@@ -1,10 +1,10 @@
-"""
+﻿"""
 Unidad III – Análisis Supervisado
 Script  : 03_regresion_analytics.py
 Tema    : 6 modelos de regresión con evaluación completa (R², MSE, MAE)
 Datos   : MongoDB Atlas → barber_db (appointments + services + barbers + users)
-Alumno  : KikeGonRam (Luis Enrique González Ramírez)
-Materia : Extracción del conocimiento en bases de datos – UTVT IDGS-84
+Equipo  : Equipo UrbanBlade
+Materia : Extracción del conocimiento en bases de datos – UTVT IDGS-93
 Docente : MGTI. Héctor Velázquez Estrada
 """
 import sys
