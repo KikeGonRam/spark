@@ -96,6 +96,19 @@ def _edad(fecha_nac, ref_year=None):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Resolución de nombre de barbero (usada por _extract_records, get_pagos_df,
+# get_horarios_df — el campo 'nombre' no existe en `barbers`, se resuelve por
+# barbers.user_id → users.name)
+# ─────────────────────────────────────────────────────────────────────────────
+def _resolve_barbero(brb: dict, users_map: dict) -> str:
+    nombre = brb.get("nombre")
+    if nombre:
+        return nombre
+    uid = str(brb.get("user_id", ""))
+    return users_map.get(uid, {}).get("name", "Sin nombre")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Extracción cruda (PyMongo, SIN Spark) — testeable de forma aislada
 # ─────────────────────────────────────────────────────────────────────────────
 def _build_maps(db):
@@ -129,9 +142,7 @@ def _extract_records(db):
     services_map, barbers_map, clients_map, users_map = _build_maps(db)
 
     def nombre_barbero(bid):
-        brb = barbers_map.get(str(bid), {})
-        uid = str(brb.get("user_id", ""))
-        return users_map.get(uid, {}).get("name", "Sin nombre")
+        return _resolve_barbero(barbers_map.get(str(bid), {}), users_map)
 
     def datos_cliente(cid):
         cli = clients_map.get(str(cid), {})
