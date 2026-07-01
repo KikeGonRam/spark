@@ -45,23 +45,37 @@ MongoDB Atlas, procesa datos y alimenta dashboards Streamlit.
 
 ```
 appointments  → _id, service_id, barber_id, client_id, precio_cobrado,
-                estado (pendiente|confirmada|en_proceso|completada|cancelada|no_asistio),
-                fecha (UTCDateTime), hora_inicio, hora_fin, code
+                estado (pendiente|confirmada|completada|cancelada),   ← SOLO 4 estados reales
+                fecha (UTCDateTime), hora_inicio, hora_fin, metodo_pago, code
 
-services      → _id, nombre, duracion_min, precio, activo
-barbers       → _id, user_id, activo
-users         → _id, name, email, role (admin|barber|client)
-clients       → _id, user_id, nivel, puntos_lealtad, slug
-payments      → _id, appointment_id, monto, propina, metodo_pago, created_at
-loyalty_transactions → _id, client_id, points, type, created_at
-products      → _id, nombre, categoria, tipo, stock_actual, stock_minimo, precio_venta
+services      → _id, nombre, categoria (barba|combo|corte|tratamiento), duracion_min, precio, activo
+barbers       → _id, user_id, activo   ← NO tiene campo 'nombre': se resuelve por user_id → users.name
+users         → _id, name, email, role_id
+clients       → _id, user_id, nivel (regular|vip), puntos, total_citas, fecha_nacimiento
+payments      → _id, appointment_id, monto, propina (=0 en datos actuales), metodo_pago
+loyalty_transactions → _id, client_id, puntos, tipo
 ```
 
-> **Schema real del barber Laravel**: los scripts usan PyMongo para hacer JOIN de
-> `appointments + services + barbers + users` y producen el DataFrame Spark con las
-> columnas: `servicio, barbero, duracion_min, precio, estado, ingreso, fecha`.
-> `ingreso = precio_cobrado` (lo que realmente pagó el cliente).
-> Features para ML: `["duracion_min", "precio", "ingreso"]`
+> **Schema real verificado** (12,535 citas, 1000 clientes, 25 barberos):
+> `client_id` referencia la colección **`clients`** (NO `users`) → nombre real por
+> `client_id → clients.user_id → users.name`. `precio_cobrado == precio_servicio`
+> siempre (sin descuentos ni propinas).
+>
+> **Capa de datos única** `mongo_spark_conexion_sinnulos.py` → `get_spark_session()`
+> devuelve `(spark, df, df_vector)`. El `df` conserva las columnas originales
+> (`servicio, barbero, duracion_min, precio, estado, ingreso, fecha`) y AGREGA:
+> `cliente, nivel, categoria, precio_base, es_cancelada, anio, mes, dia, dia_semana,
+> hora, puntos_cliente, edad_cliente, client_id`. Los scripts 01–07 no se rompen.
+>
+> Helpers y constantes exportadas:
+> - `get_clientes_df(spark, df)` → RFM por cliente (usado por 08 y 09)
+> - `FEATURES_BASE = ["duracion_min","precio","ingreso"]` (compatibilidad)
+> - `FEATURES_CANCEL = ["duracion_min","precio","hora","dia_semana","mes"]` (clasificación honesta)
+> - `ESTADOS_VALIDOS`, `CATEGORIAS`, `DIAS_SEMANA`, `MESES`
+>
+> **Sin fuga de datos (leakage)**: como `ingreso == precio`, NUNCA se predice `ingreso`
+> usando `precio` como feature. La regresión (03) predice la **facturación diaria**;
+> la clasificación (04/05) predice **cancelación** con `FEATURES_CANCEL`.
 
 ---
 

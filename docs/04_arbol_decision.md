@@ -1,65 +1,62 @@
-# 04 — Árbol de Decisión
+# 04 — Árbol de Decisión: Predicción de Cancelación
 
 ## Descripción
 
-Clasifica citas en **alto valor** (1) o **bajo valor** (0) según si el ingreso supera los $500 MXN.
+Clasifica cada cita según si será **cancelada** (1) o no (0), a partir de su
+contexto (horario, día, servicio). Objetivo de negocio: anticipar cancelaciones
+para reducir huecos en la agenda.
 
 ```
-label = 1  si  ingreso > 500  (cita de alto valor)
-label = 0  si  ingreso ≤ 500  (cita de bajo valor)
+label = es_cancelada   (1 = cancelada, 0 = resto)
 ```
 
-Parámetros: `DecisionTreeClassifier(maxDepth=3)`. Split: 80/20.
+Parámetros: `DecisionTreeClassifier(maxDepth=5)`. Split: 80/20.
 
 ---
 
-## Estructura del árbol aprendido
+## Features (sin fuga de datos)
 
-```
-DecisionTreeClassificationModel
-  depth=1, numNodes=3, numClasses=2, numFeatures=3
+| Feature | Origen |
+|---------|--------|
+| `duracion_min` | del servicio |
+| `precio` | precio del servicio |
+| `hora` | `hora_inicio` de la cita |
+| `dia_semana` | derivada de `fecha` (1=Lun … 7=Dom) |
+| `mes` | derivada de `fecha` |
 
-  If (feature 1 <= 505.745)    ← feature 1 = precio
-     Predict: 0.0              ← bajo valor
-  Else (feature 1 > 505.745)
-     Predict: 1.0              ← alto valor
-```
-
-El árbol colapsó a **profundidad 1** con una sola regla:
-> **Si precio > $505.75 → cita de alto valor**
-
----
-
-## Resultados
-
-| Métrica | Valor |
-|---------|-------|
-| Datos entrenamiento | 229 |
-| Datos prueba | 54 |
-| **Accuracy** | **1.0 (100%)** |
-
-### Muestra de predicciones
-
-```
-[30.0, 152.4, 152.4]  → label=0, pred=0.0  ✓
-[30.0, 525.94, 525.94]→ label=1, pred=1.0  ✓
-[75.0, 572.86, 572.86]→ label=1, pred=1.0  ✓
-[30.0, 432.54, 432.54]→ label=0, pred=0.0  ✓
-```
+El estado de la cita **NO** se usa como feature — se predice desde el contexto.
+Esto evita la fuga de datos del enfoque anterior (que clasificaba "alto valor"
+usando `ingreso`, una copia de `precio`, y daba accuracy=100% artificial).
 
 ---
 
-## Por qué accuracy = 1.0
+## Métrica clave: AUC, no accuracy
 
-Misma razón que en regresión: `ingreso = precio`. El árbol usa `feature 1` (precio) para predecir si `ingreso > 500`, pero `ingreso ≡ precio`, así que la regla `precio > 505.75 → label=1` es perfecta por definición.
+Las clases están **desbalanceadas**: solo ~8.4% de las citas se cancelan.
+Con ese desbalance, un modelo que prediga "nunca cancela" ya obtiene ~92% de
+accuracy sin aprender nada. Por eso la métrica relevante es el **AUC-ROC** y el
+**Recall** sobre la clase minoritaria (cancelaciones).
 
-El umbral 505.745 que el árbol aprendió corresponde a un punto medio entre el precio más alto ≤ 500 y el precio más bajo > 500 en el dataset de entrenamiento.
+Se reportan: Accuracy, Precision, Recall, F1 y AUC-ROC (calculados en ejecución).
 
 ---
 
-## Observaciones técnicas
+## Interpretabilidad
 
-- `maxDepth=3` se configuró pero el árbol convergió en depth=1 (sólo necesita 1 split para clasificar perfectamente)
-- `numFeatures=3` pero efectivamente sólo usa la feature 1 (precio)
-- `feature 0 = duracion_min`, `feature 1 = precio`, `feature 2 = ingreso`
-- En datos reales con `ingreso ≠ precio` el árbol usaría las 3 features y alcanzaría una profundidad mayor con accuracy realista
+El árbol imprime `toDebugString` (sus reglas) y la **importancia de variables**,
+que revela qué factores (hora, día, tipo de servicio) predicen mejor una cancelación.
+
+---
+
+## Relación con el script 05
+
+El script 05 resuelve **el mismo problema** con un **Bosque Aleatorio** (100 árboles).
+Comparar el AUC de ambos ilustra por qué un ensemble suele superar a un árbol único:
+menos sobreajuste y mayor robustez al ruido.
+
+---
+
+## Aplicación
+
+Reforzar recordatorios (WhatsApp/llamada) y confirmación activa en los horarios y
+servicios que el modelo marca como de mayor riesgo de cancelación.

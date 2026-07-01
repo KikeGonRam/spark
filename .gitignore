@@ -9,3 +9,6 @@ modelo_pipeline_rf_urbanblade/
 *.iml
 spark-warehouse/
 derby.log
+
+# Salidas ETL generadas (no versionar)
+data/

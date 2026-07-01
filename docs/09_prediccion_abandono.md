@@ -1,46 +1,54 @@
 # Script 09: Predicción de Abandono de Clientes (Churn)
 
-**Script**: `ml_algorithms/09_prediccion_abandono.py`  
-**Dashboard**: `analytics/dashboard_abandono.py`  
-**Dataset**: 283 citas reales — `barber_db` (MongoDB Atlas)  
-**Datos reales**: Sí — join de `appointments + services + users`
+**Script**: `ml_algorithms/09_prediccion_abandono.py`
+**Datos**: `barber_db` (MongoDB Atlas) — **12,535 citas, 1000 clientes reales**
+**Capa de datos**: `get_clientes_df()` (RFM por cliente) desde el conector único
 
 ---
 
 ## Objetivo
 
-Identificar qué clientes tienen mayor probabilidad de dejar de asistir a la barbería, antes de que ocurra, para activar campañas de retención a tiempo.
+Identificar qué clientes tienen mayor probabilidad de dejar de asistir, **antes** de
+que ocurra, para activar campañas de retención a tiempo.
 
 ---
 
-## Feature Engineering por cliente
+## Corrección importante respecto a la versión anterior
 
-Cada cliente se describe con 5 variables derivadas de su historial real:
+1. **Nombres de cliente reales.** `client_id` referencia la colección `clients`,
+   NO `users`. La versión anterior resolvía el nombre contra `users` y mostraba a
+   **todos** como "Cliente". Ahora la ruta correcta es
+   `client_id → clients → user_id → users.name`.
+2. **Sin fuga de datos.** Antes la etiqueta se definía con `dias_sin_cita` y esa
+   misma variable se usaba como feature (circular) → AUC artificialmente perfecto.
+   Ahora la recencia define la etiqueta pero **no** entra como feature.
+3. **Evaluación real.** Se añadió split **train/test 70/30**; el AUC se mide sobre
+   clientes no vistos.
 
-| Feature | Cálculo | Interpretación |
+---
+
+## Feature Engineering por cliente (RFM)
+
+| Feature | Cálculo | Rol |
 |---|---|---|
-| `dias_sin_cita` | `max(dias_desde_cita)` | Inactividad reciente |
-| `gasto_promedio` | `mean(precio)` | Valor por visita |
-| `tasa_cancelacion_pct` | `canceladas / total * 100` | Confiabilidad del cliente |
+| `total_citas` | `count(*)` | Frecuencia / antigüedad |
+| `gasto_promedio` | `mean(ingreso)` | Valor por visita |
+| `gasto_total` | `sum(ingreso)` | Valor monetario total |
+| `tasa_cancelacion_pct` | `canceladas / total * 100` | Confiabilidad |
 | `frecuencia_mensual` | `total_citas / meses_activo` | Ritmo de visitas |
-| `total_citas` | `count(*)` | Antigüedad en el sistema |
+| `meses_activo` | rango de fechas / 30 | Tenure |
+
+La **recencia** (`dias_sin_cita`) se usa solo para definir la etiqueta, no como feature.
 
 ---
 
 ## Definición de riesgo (label)
 
-El label `en_riesgo = 1` se asigna si el cliente cumple **cualquiera** de:
-
 ```
-dias_sin_cita > percentil_60(dias_sin_cita)   [umbral dinámico]
-tasa_cancelacion > 30%
+en_riesgo = 1  si  dias_sin_cita > percentil_70(dias_sin_cita)
 ```
 
-El umbral del percentil 60 se calcula automáticamente sobre los datos actuales para adaptarse a la distribución real del momento de ejecución.
-
-Con el dataset actual de 283 citas:
-- Umbral de días típico: ~15–25 días
-- Distribución esperada: ~35-45% en riesgo / ~55-65% estables
+El umbral (percentil 70) se calcula sobre los datos reales en tiempo de ejecución.
 
 ---
 
@@ -48,60 +56,31 @@ Con el dataset actual de 283 citas:
 
 | Parámetro | Valor |
 |---|---|
-| `numTrees` | 10 |
-| `maxDepth` | 3 |
-| `seed` | 42 |
-| Train set | 100% (dataset pequeño — sin split) |
+| `numTrees` | 100 |
+| `maxDepth` | 5 |
+| Split | 70% train / 30% test |
+| Métrica principal | AUC-ROC (sobre test) + F1 |
 
-**Métricas esperadas** (varían con datos):
+El modelo aprende a anticipar el abandono a partir del **patrón de consumo**
+(frecuencia, gasto, cancelaciones, tenure), no de la variable que define la etiqueta.
 
-| Métrica | Valor típico |
+---
+
+## Salida
+
+- Métricas AUC / Accuracy / F1 sobre el conjunto de prueba.
+- Importancia de variables (qué patrón anticipa mejor el abandono).
+- Lista de clientes en riesgo con **probabilidad de abandono** del modelo, con nombres reales.
+
+---
+
+## Acciones de retención
+
+| Probabilidad | Acción |
 |---|---|
-| AUC-ROC | 0.75–0.95 |
-| Accuracy | 0.75–0.90 |
-
-> **Nota**: Con ~25 clientes el modelo aprende directamente de los datos de entrenamiento. En producción con cientos de clientes se haría split 80/20 y se mediría generalización real.
-
----
-
-## Importancia de features
-
-Orden esperado de importancia (de mayor a menor):
-
-1. `dias_sin_cita` — el predictor más fuerte: inactividad reciente es la señal de abandono más clara
-2. `tasa_cancelacion_pct` — clientes que cancelan frecuentemente tienen mayor riesgo
-3. `frecuencia_mensual` — baja frecuencia → mayor riesgo
-4. `gasto_promedio` — clientes con bajo ticket son más volátiles
-5. `total_citas` — clientes nuevos tienen mayor riesgo que los leales
-
----
-
-## Score de riesgo (dashboard)
-
-El dashboard calcula un **score 0–100** para cada cliente:
-
-```
-score_riesgo = (dias_sin_cita / max_dias) * 60 + (tasa_cancelacion / 100) * 40
-```
-
-| Score | Nivel | Acción |
-|---|---|---|
-| >= 70 | URGENTE | Llamada personal + oferta especial inmediata |
-| 40–69 | ATENCION | WhatsApp + descuento 15% |
-| < 40 | PREVENTIVO | Newsletter mensual + recordatorio |
-
----
-
-## Dashboard
-
-El dashboard `dashboard_abandono.py` incluye:
-
-1. **KPIs**: Total, En riesgo, Estables, Ingresos en riesgo ($)
-2. **Sliders interactivos**: ajustar umbrales de días y % cancelación en tiempo real
-3. **Bar chart horizontal**: Score de riesgo por cliente (rojo = riesgo, verde = estable)
-4. **Scatter plot**: Días inactivo vs Tasa cancelación con líneas de umbral
-5. **Tabla de acción**: clientes en riesgo ordenados por score, con colores por urgencia
-6. **Expander**: clientes estables para contexto
+| > 70% | Llamada personal + oferta urgente |
+| 40–70% | WhatsApp + descuento 15% |
+| < 40% | Newsletter mensual |
 
 ---
 
@@ -109,18 +88,8 @@ El dashboard `dashboard_abandono.py` incluye:
 
 ```bash
 # Script PySpark
-python3 ml_algorithms/09_prediccion_abandono.py
+spark-submit ml_algorithms/09_prediccion_abandono.py
 
-# Dashboard interactivo
-streamlit run analytics/dashboard_abandono.py
+# En el dashboard unificado: pestaña "Churn / Abandono"
+streamlit run analytics/main_dashboard.py
 ```
-
----
-
-## Valor de negocio
-
-El costo de retener a un cliente existente es ~5x menor que adquirir uno nuevo. Con esta herramienta, el sistema UrbanBlade puede:
-
-- Detectar los 3–5 clientes con mayor riesgo de fuga cada semana
-- Enviar oferta personalizada antes de que se vayan
-- Medir el éxito de la retención comparando scores antes y después de la campaña

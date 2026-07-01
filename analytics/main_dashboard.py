@@ -17,6 +17,10 @@ from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
 
+from config.mongo_spark_conexion_sinnulos import (
+    FEATURES_CANCEL, DIAS_SEMANA, MESES, get_clientes_df
+)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # CONFIGURACIÓN
 # ─────────────────────────────────────────────────────────────────────────────
@@ -66,41 +70,52 @@ def cargar_datos():
 
 @st.cache_resource(show_spinner="Entrenando modelos de regresión…")
 def entrenar_regresion(_spark, _df):
+    """Regresión HONESTA: predice la facturación DIARIA (no el precio por cita,
+    que sería trivial porque precio_cobrado==precio_servicio). Target=ingreso_dia,
+    features=num_citas/duración/calendario → sin fuga de datos."""
     from pyspark.ml.feature import VectorAssembler, PolynomialExpansion
     from pyspark.ml.regression import LinearRegression
     from pyspark.ml.evaluation import RegressionEvaluator
     from pyspark.ml.tuning import CrossValidator, ParamGridBuilder
+    from pyspark.sql.functions import col, count, sum as ssum, to_date, dayofweek, month
 
-    train, test = _df.randomSplit([0.8, 0.2], seed=42)
+    dia = (_df.filter(col("estado") != "cancelada")
+              .withColumn("fecha_dt", to_date(col("fecha").substr(1, 10), "yyyy-MM-dd"))
+              .groupBy("fecha_dt").agg(
+                  count("*").alias("num_citas"),
+                  ssum("ingreso").alias("ingreso_dia"),
+                  ssum("duracion_min").alias("duracion_total"))
+              .withColumn("dia_semana", dayofweek(col("fecha_dt")))
+              .withColumn("mes", month(col("fecha_dt")))
+              .dropna())
+    train, test = dia.randomSplit([0.8, 0.2], seed=42)
 
     def evaluar(preds):
-        r2  = RegressionEvaluator(labelCol="ingreso", predictionCol="prediction", metricName="r2").evaluate(preds)
-        mse = RegressionEvaluator(labelCol="ingreso", predictionCol="prediction", metricName="mse").evaluate(preds)
-        mae = RegressionEvaluator(labelCol="ingreso", predictionCol="prediction", metricName="mae").evaluate(preds)
-        return round(r2, 4), round(mse, 2), round(mae, 2)
+        e = lambda mt: RegressionEvaluator(labelCol="ingreso_dia", predictionCol="prediction", metricName=mt).evaluate(preds)
+        return round(e("r2"), 4), round(e("mse"), 2), round(e("mae"), 2)
 
-    a1   = VectorAssembler(inputCols=["duracion_min"], outputCol="features", handleInvalid="skip")
-    p1   = LinearRegression(featuresCol="features", labelCol="ingreso").fit(a1.transform(train)).transform(a1.transform(test))
+    a1   = VectorAssembler(inputCols=["num_citas"], outputCol="features", handleInvalid="skip")
+    p1   = LinearRegression(featuresCol="features", labelCol="ingreso_dia").fit(a1.transform(train)).transform(a1.transform(test))
     r1   = evaluar(p1)
-    pdf1 = p1.select("duracion_min", "ingreso", "prediction").toPandas()
+    pdf1 = p1.select("num_citas", "ingreso_dia", "prediction").toPandas()
 
-    a2   = VectorAssembler(inputCols=["duracion_min", "precio"], outputCol="features", handleInvalid="skip")
+    feat = ["num_citas", "duracion_total", "dia_semana", "mes"]
+    a2   = VectorAssembler(inputCols=feat, outputCol="features", handleInvalid="skip")
     tr2  = a2.transform(train); te2 = a2.transform(test)
-    m2   = LinearRegression(featuresCol="features", labelCol="ingreso").fit(tr2)
-    p2   = m2.transform(te2)
-    r2   = evaluar(p2)
+    m2   = LinearRegression(featuresCol="features", labelCol="ingreso_dia").fit(tr2)
+    r2   = evaluar(m2.transform(te2))
 
-    m3   = LinearRegression(featuresCol="features", labelCol="ingreso", regParam=0.5, elasticNetParam=0).fit(tr2)
+    m3   = LinearRegression(featuresCol="features", labelCol="ingreso_dia", regParam=0.5, elasticNetParam=0).fit(tr2)
     r3   = evaluar(m3.transform(te2))
-    m4   = LinearRegression(featuresCol="features", labelCol="ingreso", regParam=0.5, elasticNetParam=1).fit(tr2)
+    m4   = LinearRegression(featuresCol="features", labelCol="ingreso_dia", regParam=0.5, elasticNetParam=1).fit(tr2)
     r4   = evaluar(m4.transform(te2))
 
     poly = PolynomialExpansion(inputCol="features", outputCol="pf", degree=2)
-    m5   = LinearRegression(featuresCol="pf", labelCol="ingreso").fit(poly.transform(tr2))
+    m5   = LinearRegression(featuresCol="pf", labelCol="ingreso_dia").fit(poly.transform(tr2))
     r5   = evaluar(m5.transform(poly.transform(te2)))
 
-    ev   = RegressionEvaluator(labelCol="ingreso", predictionCol="prediction", metricName="r2")
-    lr   = LinearRegression(featuresCol="features", labelCol="ingreso")
+    ev   = RegressionEvaluator(labelCol="ingreso_dia", predictionCol="prediction", metricName="r2")
+    lr   = LinearRegression(featuresCol="features", labelCol="ingreso_dia")
     pg   = ParamGridBuilder().addGrid(lr.regParam, [0.01, 0.1, 1]).addGrid(lr.elasticNetParam, [0, 0.5, 1]).build()
     cv   = CrossValidator(estimator=lr, estimatorParamMaps=pg, evaluator=ev, numFolds=3)
     r6   = evaluar(cv.fit(tr2).transform(te2))
@@ -115,16 +130,18 @@ def entrenar_regresion(_spark, _df):
 
 @st.cache_resource(show_spinner="Entrenando Árbol de Decisión…")
 def entrenar_arbol(_spark, _df):
+    """Clasificación HONESTA: ¿se cancelará la cita? Target=es_cancelada,
+    features de contexto (sin el estado dentro) → sin fuga de datos."""
     from pyspark.ml.feature import VectorAssembler
     from pyspark.ml.classification import DecisionTreeClassifier
     from pyspark.ml.evaluation import MulticlassClassificationEvaluator, BinaryClassificationEvaluator
-    from pyspark.sql.functions import when, col
+    from pyspark.sql.functions import col
+    from config.mongo_spark_conexion_sinnulos import FEATURES_CANCEL
 
-    df2   = _df.withColumn("label", when(col("ingreso") > 500, 1).otherwise(0))
-    asm   = VectorAssembler(inputCols=["duracion_min", "precio", "ingreso"], outputCol="features", handleInvalid="skip")
-    ds    = asm.transform(df2).select("features", "label", "servicio", "precio", "ingreso", "duracion_min")
+    asm   = VectorAssembler(inputCols=FEATURES_CANCEL, outputCol="features", handleInvalid="skip")
+    ds    = asm.transform(_df).select("features", col("es_cancelada").alias("label"))
     tr, te = ds.randomSplit([0.8, 0.2], seed=42)
-    model = DecisionTreeClassifier(featuresCol="features", labelCol="label", maxDepth=5).fit(tr)
+    model = DecisionTreeClassifier(featuresCol="features", labelCol="label", maxDepth=5, seed=42).fit(tr)
     preds = model.transform(te)
 
     def m(name): return MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName=name).evaluate(preds)
@@ -138,16 +155,17 @@ def entrenar_arbol(_spark, _df):
 
 @st.cache_resource(show_spinner="Entrenando Random Forest…")
 def entrenar_rf(_spark, _df):
+    """Mismo problema que el árbol (cancelación) pero con bosque de 100 árboles."""
     from pyspark.ml import Pipeline
     from pyspark.ml.feature import VectorAssembler
     from pyspark.ml.classification import RandomForestClassifier
     from pyspark.ml.evaluation import BinaryClassificationEvaluator, MulticlassClassificationEvaluator
-    from pyspark.sql.functions import when, col
+    from pyspark.sql.functions import col
+    from config.mongo_spark_conexion_sinnulos import FEATURES_CANCEL
 
-    df2  = _df.withColumn("categoria", when(col("estado").isin("cancelada", "no_asistio"), 1).otherwise(0))
-    df2  = df2.fillna({"duracion_min": 30, "precio": 0, "ingreso": 0})
+    df2  = _df.withColumn("categoria", col("es_cancelada").cast("int"))
     tr, te = df2.randomSplit([0.7, 0.3], seed=42)
-    asm  = VectorAssembler(inputCols=["duracion_min", "precio", "ingreso"], outputCol="features", handleInvalid="skip")
+    asm  = VectorAssembler(inputCols=FEATURES_CANCEL, outputCol="features", handleInvalid="skip")
     rf   = RandomForestClassifier(featuresCol="features", labelCol="categoria", numTrees=100, maxDepth=5, seed=42)
     model = Pipeline(stages=[asm, rf]).fit(tr)
     preds = model.transform(te)
@@ -204,6 +222,147 @@ def entrenar_pca(_df_vector, _df):
     var  = [round(float(v)*100, 1) for v in pm.explainedVariance]
     return pdf, var, sil
 
+@st.cache_resource(show_spinner="Segmentando clientes (RFM + KMeans)…")
+def entrenar_segmentacion(_spark, _df):
+    from pyspark.ml.feature import VectorAssembler, StandardScaler
+    from pyspark.ml.clustering import KMeans
+    from pyspark.ml.evaluation import ClusteringEvaluator
+    from pyspark.sql.functions import col, count, avg, round as sround, udf
+    from pyspark.sql.types import StringType
+
+    clientes = get_clientes_df(_spark, _df)
+    feats = ["total_citas", "gasto_total", "gasto_promedio", "tasa_cancelacion_pct", "dias_sin_cita"]
+    asm   = VectorAssembler(inputCols=feats, outputCol="raw", handleInvalid="skip")
+    dv    = asm.transform(clientes)
+    sc    = StandardScaler(inputCol="raw", outputCol="features", withMean=True, withStd=True).fit(dv).transform(dv)
+    km    = KMeans(k=4, seed=42, featuresCol="features").fit(sc)
+    pred  = km.transform(sc)
+    sil   = round(ClusteringEvaluator(featuresCol="features").evaluate(pred), 4)
+
+    stats = (pred.groupBy("prediction").agg(
+                count("*").alias("num_clientes"),
+                sround(avg("total_citas"), 1).alias("citas_prom"),
+                sround(avg("gasto_total"), 0).alias("gasto_total_prom"),
+                sround(avg("gasto_promedio"), 0).alias("ticket_prom"),
+                sround(avg("tasa_cancelacion_pct"), 1).alias("cancelacion_pct"),
+                sround(avg("dias_sin_cita"), 0).alias("dias_inactivo_prom"))
+             .orderBy("gasto_total_prom", ascending=False).toPandas())
+
+    label_map = {int(stats.iloc[0]["prediction"]): "VIP",
+                 int(stats.iloc[1]["prediction"]): "Alto consumo"}
+    rem = [int(stats.iloc[2]["prediction"]), int(stats.iloc[3]["prediction"])]
+    sub = stats[stats["prediction"].astype(int).isin(rem)]
+    inact = int(sub.sort_values("dias_inactivo_prom", ascending=False).iloc[0]["prediction"])
+    label_map[inact] = "Inactivo"
+    for p in rem:
+        label_map.setdefault(p, "Frecuente")
+    stats["segmento"] = stats["prediction"].astype(int).map(label_map)
+
+    seg_udf = udf(lambda p: label_map.get(int(p), "?"), StringType())
+    seg_pdf = (pred.withColumn("segmento", seg_udf(col("prediction")))
+                   .select("cliente", "nivel", "total_citas", "gasto_total",
+                           "gasto_promedio", "tasa_cancelacion_pct", "dias_sin_cita", "segmento")
+                   .toPandas())
+    return seg_pdf, sil, stats
+
+@st.cache_resource(show_spinner="Prediciendo abandono de clientes (churn)…")
+def entrenar_churn(_spark, _df):
+    from pyspark.ml.feature import VectorAssembler
+    from pyspark.ml.classification import RandomForestClassifier
+    from pyspark.ml.evaluation import BinaryClassificationEvaluator, MulticlassClassificationEvaluator
+    from pyspark.sql.functions import col, when
+
+    clientes = get_clientes_df(_spark, _df)
+    umbral = clientes.approxQuantile("dias_sin_cita", [0.70], 0.01)[0]
+    clientes = clientes.withColumn("label", when(col("dias_sin_cita") > umbral, 1.0).otherwise(0.0))
+
+    feats = ["total_citas", "gasto_promedio", "gasto_total",
+             "tasa_cancelacion_pct", "frecuencia_mensual", "meses_activo"]
+    data  = VectorAssembler(inputCols=feats, outputCol="features", handleInvalid="skip").transform(clientes)
+    tr, te = data.randomSplit([0.7, 0.3], seed=42)
+    model  = RandomForestClassifier(featuresCol="features", labelCol="label",
+                                    numTrees=100, maxDepth=5, seed=42).fit(tr)
+    preds  = model.transform(te)
+    auc = round(BinaryClassificationEvaluator(labelCol="label", rawPredictionCol="rawPrediction",
+                                              metricName="areaUnderROC").evaluate(preds), 4)
+    acc = round(MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction",
+                                                  metricName="accuracy").evaluate(preds), 4)
+    f1  = round(MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction",
+                                                  metricName="f1").evaluate(preds), 4)
+    metrics  = {"AUC": auc, "Accuracy": acc, "F1": f1, "umbral": round(umbral, 0)}
+    feat_imp = list(zip(feats, [round(float(x), 4) for x in model.featureImportances.toArray()]))
+
+    try:
+        from pyspark.ml.functions import vector_to_array
+        scored = model.transform(data).withColumn("prob", vector_to_array(col("probability"))[1] * 100)
+    except Exception:
+        from pyspark.sql.functions import udf
+        from pyspark.sql.types import DoubleType
+        p1 = udf(lambda v: float(v[1]) * 100, DoubleType())
+        scored = model.transform(data).withColumn("prob", p1(col("probability")))
+    riesgo = (scored.filter(col("label") == 1)
+                    .select("cliente", "nivel", "total_citas", "gasto_promedio",
+                            "tasa_cancelacion_pct", "dias_sin_cita", "prob")
+                    .orderBy(col("prob").desc()).limit(25).toPandas())
+    total   = clientes.count()
+    n_riesgo = clientes.filter(col("label") == 1).count()
+    return metrics, feat_imp, riesgo, (n_riesgo, total)
+
+@st.cache_resource(show_spinner="Buscando reglas de recomendación (FP-Growth)…")
+def entrenar_recomendacion(_spark, _df):
+    from pyspark.ml.fpm import FPGrowth
+    from pyspark.sql.functions import col, count, collect_set, size, round as sround, desc
+
+    df_ok = _df.filter(col("estado").isin("completada", "confirmada")).filter(col("client_id") != "")
+    tx    = (df_ok.groupBy("client_id").agg(collect_set("servicio").alias("items"))
+                  .filter(size(col("items")) >= 1))
+    fp    = FPGrowth(itemsCol="items", minSupport=0.10, minConfidence=0.20).fit(tx)
+    freq  = fp.freqItemsets.orderBy("freq", ascending=False).limit(15).toPandas()
+    rules = fp.associationRules
+    rules_pdf = (rules.select(
+                    col("antecedent").alias("si_pide"),
+                    col("consequent").alias("tambien_pedira"),
+                    sround(col("confidence") * 100, 1).alias("confianza_pct"),
+                    sround(col("lift"), 3).alias("lift"),
+                    sround(col("support") * 100, 1).alias("support_pct"))
+                 .orderBy(desc("lift")).limit(20).toPandas())
+    pop = (df_ok.groupBy("servicio", "categoria").agg(count("*").alias("veces_pedido"))
+                .orderBy("veces_pedido", ascending=False).toPandas())
+    freq["items"] = freq["items"].apply(lambda x: ", ".join(x))
+    for c in ["si_pide", "tambien_pedira"]:
+        if c in rules_pdf:
+            rules_pdf[c] = rules_pdf[c].apply(lambda x: ", ".join(x))
+    return freq, rules_pdf, pop
+
+@st.cache_resource(show_spinner="Analizando demanda temporal…")
+def analizar_demanda(_spark, _df):
+    from pyspark.ml.feature import VectorAssembler
+    from pyspark.ml.regression import GBTRegressor
+    from pyspark.ml.evaluation import RegressionEvaluator
+    from pyspark.sql.functions import col, count, sum as ssum, avg, round as sround
+
+    d = _df.filter((col("hora") > 0) & (col("dia_semana") > 0))
+    hora = d.groupBy("hora").agg(count("*").alias("citas"),
+                                 sround(ssum("ingreso"), 0).alias("ingreso")).orderBy("hora").toPandas()
+    dia  = d.groupBy("dia_semana").agg(count("*").alias("citas"),
+                                       sround(ssum("ingreso"), 0).alias("ingreso")).orderBy("dia_semana").toPandas()
+    mes  = d.groupBy("mes").agg(count("*").alias("citas"),
+                                sround(ssum("ingreso"), 0).alias("ingreso"),
+                                sround(avg("es_cancelada") * 100, 1).alias("cancel_pct")).orderBy("mes").toPandas()
+    dia["dia_nombre"] = dia["dia_semana"].map(DIAS_SEMANA)
+    mes["mes_nombre"] = mes["mes"].map(MESES)
+
+    slots = d.groupBy("mes", "dia_semana", "hora").agg(count("*").alias("num_citas")) \
+             .withColumn("num_citas", col("num_citas").cast("double"))
+    data = VectorAssembler(inputCols=["mes", "dia_semana", "hora"],
+                           outputCol="features", handleInvalid="skip").transform(slots)
+    tr, te = data.randomSplit([0.8, 0.2], seed=42)
+    gbt = GBTRegressor(featuresCol="features", labelCol="num_citas", maxDepth=3, maxIter=20, seed=42).fit(tr)
+    pr  = gbt.transform(te)
+    r2  = round(RegressionEvaluator(labelCol="num_citas", predictionCol="prediction", metricName="r2").evaluate(pr), 4)
+    imp = list(zip(["mes", "dia_semana", "hora"], [round(float(x), 4) for x in gbt.featureImportances.toArray()]))
+    return hora, dia, mes, r2, imp
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
@@ -236,13 +395,15 @@ st.markdown(f"<h1 style='text-align:center;color:{GOLD};font-size:2.2rem;'><i cl
 st.markdown("<p style='text-align:center;color:#888;margin-top:-10px;'>Extracción del conocimiento en bases de datos · Datos reales MongoDB Atlas</p>", unsafe_allow_html=True)
 st.divider()
 
-c1, c2, c3, c4, c5 = st.columns(5)
-completadas = pdf[pdf["estado"] == "completada"]
+c1, c2, c3, c4, c5, c6 = st.columns(6)
+canceladas   = pdf["es_cancelada"].sum() if "es_cancelada" in pdf else (pdf["estado"] == "cancelada").sum()
+ingreso_real = pdf.loc[pdf["estado"] != "cancelada", "ingreso"].sum()
 c1.metric("Total Citas",       f"{len(pdf):,}")
-c2.metric("Ingreso Total",     f"${pdf['ingreso'].sum():,.0f}")
-c3.metric("Ingreso Promedio",  f"${pdf['ingreso'].mean():,.0f}")
-c4.metric("Tasa Completadas",  f"{len(completadas)/len(pdf)*100:.1f}%")
-c5.metric("Servicios Únicos",  pdf["servicio"].nunique())
+c2.metric("Clientes Únicos",   f"{pdf['cliente'].nunique():,}")
+c3.metric("Ingreso Real",      f"${ingreso_real:,.0f}", help="Excluye citas canceladas")
+c4.metric("Ticket Promedio",   f"${pdf['ingreso'].mean():,.0f}")
+c5.metric("Tasa Cancelación",  f"{canceladas/len(pdf)*100:.1f}%")
+c6.metric("Barberos",          pdf["barbero"].nunique())
 
 st.divider()
 
@@ -250,20 +411,24 @@ st.divider()
 # TABS
 # ─────────────────────────────────────────────────────────────────────────────
 tabs = st.tabs([
-    "Resumen General",
+    "Resumen Ejecutivo",
     "MapReduce / ETL",
     "Regresion",
     "Arbol de Decision",
     "Random Forest",
     "KMeans",
     "PCA",
+    "Segmentacion Clientes",
+    "Churn / Abandono",
+    "Recomendacion",
+    "Demanda",
 ])
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — RESUMEN GENERAL
 # ══════════════════════════════════════════════════════════════════════════════
 with tabs[0]:
-    st.subheader("Resumen General del Negocio")
+    st.subheader("Resumen Ejecutivo del Negocio")
 
     col_a, col_b = st.columns(2)
 
@@ -382,7 +547,10 @@ with tabs[1]:
 # ══════════════════════════════════════════════════════════════════════════════
 with tabs[2]:
     st.subheader("Unidad III — Análisis Supervisado: Regresión")
-    st.caption("6 modelos de regresión | métricas: R², MSE (Error Cuadrático Medio), MAE (Error Absoluto Medio)")
+    st.caption("Predicción de la FACTURACIÓN DIARIA (target real, sin fuga) · 6 modelos · R², MSE, MAE")
+    st.info("Se predice el ingreso **por día** a partir del volumen de citas y el calendario. "
+            "Predecir el precio de una sola cita sería trivial (precio_cobrado==precio_servicio), "
+            "por eso agregamos por día: ahí sí hay varianza real.", icon=":material/info:")
 
     with st.spinner("Entrenando 6 modelos de regresión sobre datos reales…"):
         tabla_reg, pdf_scatter = entrenar_regresion(spark, df)
@@ -419,11 +587,11 @@ with tabs[2]:
     col_c, col_d = st.columns(2)
 
     with col_c:
-        fig3 = px.scatter(pdf_scatter, x="duracion_min", y="ingreso",
-                          title="Datos Reales vs Predicción — Regresión Lineal Simple",
-                          labels={"duracion_min": "Duración (min)", "ingreso": "Ingreso ($MXN)"},
+        fig3 = px.scatter(pdf_scatter, x="num_citas", y="ingreso_dia",
+                          title="Facturación diaria real vs Predicción (Lineal Simple)",
+                          labels={"num_citas": "Citas en el día", "ingreso_dia": "Facturación del día ($MXN)"},
                           color_discrete_sequence=[BLUE], opacity=0.5)
-        fig3.add_scatter(x=pdf_scatter["duracion_min"], y=pdf_scatter["prediction"],
+        fig3.add_scatter(x=pdf_scatter["num_citas"], y=pdf_scatter["prediction"],
                          mode="markers", name="Predicción", marker=dict(color=GOLD, symbol="x", size=6))
         fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
         st.plotly_chart(fig3, use_container_width=True)
@@ -444,7 +612,7 @@ with tabs[2]:
 # ══════════════════════════════════════════════════════════════════════════════
 with tabs[3]:
     st.subheader("Unidad III — Árbol de Decisión")
-    st.caption("Clasificación: cita de ALTO VALOR (ingreso > $500 MXN) = 1  |  BAJO VALOR = 0")
+    st.caption("Clasificación honesta: ¿se CANCELARÁ la cita?  1 = cancelada  |  0 = resto  ·  clases desbalanceadas → AUC")
 
     with st.spinner("Entrenando Árbol de Decisión…"):
         metricas_dt, conf_dt, feat_imp_dt = entrenar_arbol(spark, df)
@@ -460,7 +628,7 @@ with tabs[3]:
 
     with col_a:
         # Matriz de confusión como heatmap
-        labels_map = {0: "Bajo (≤$500)", 1: "Alto (>$500)"}
+        labels_map = {0: "No cancela", 1: "Cancela"}
         conf_dt["label_str"]      = conf_dt["label"].map(labels_map)
         conf_dt["prediction_str"] = conf_dt["prediction"].map(labels_map)
         pivot = conf_dt.pivot(index="label_str", columns="prediction_str", values="count").fillna(0)
@@ -472,7 +640,7 @@ with tabs[3]:
 
     with col_b:
         # Importancia de variables
-        feat_names = ["duracion_min", "precio", "ingreso"]
+        feat_names = FEATURES_CANCEL
         fig2 = px.bar(x=feat_names, y=feat_imp_dt,
                       title="Importancia de Variables — Árbol de Decisión",
                       color=feat_imp_dt, color_continuous_scale=[[0, "#333"], [1, GOLD]],
@@ -501,14 +669,15 @@ with tabs[3]:
         acc = metricas_dt["Accuracy"]
         auc = metricas_dt["AUC"]
         st.info(f"""
-**Árbol de Decisión — Análisis Supervisado**
+**Árbol de Decisión — predicción de cancelación**
 
-- **Accuracy {acc*100:.1f}%**: el modelo clasifica correctamente {acc*100:.1f}% de las citas
-- **AUC {auc:.4f}**: capacidad discriminativa {'excelente' if auc > 0.9 else 'buena' if auc > 0.75 else 'moderada'}
+- **AUC {auc:.4f}**: capacidad discriminativa {'excelente' if auc > 0.8 else 'buena' if auc > 0.7 else 'moderada'}
+  (métrica clave: las clases están desbalanceadas ~8% cancelaciones)
+- **Accuracy {acc*100:.1f}%**: con clases desbalanceadas, el accuracy engaña → mirar AUC/Recall
 - **Feature más importante**: `{feat_names[feat_imp_dt.index(max(feat_imp_dt))]}`
   ({max(feat_imp_dt)*100:.1f}% del poder predictivo)
-- **Umbral**: citas con ingreso > $500 MXN se clasifican como ALTO VALOR
-- **Aplicación**: identificar servicios premium para estrategias de fidelización
+- **Sin fuga de datos**: se predice desde el contexto (hora, día, servicio), no desde el estado
+- **Aplicación**: reforzar recordatorios en los horarios/servicios de mayor riesgo
         """)
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -516,7 +685,7 @@ with tabs[3]:
 # ══════════════════════════════════════════════════════════════════════════════
 with tabs[4]:
     st.subheader("Unidad III — Random Forest")
-    st.caption("Clasificación: predicción de citas canceladas o no asistidas (label=1)")
+    st.caption("Mismo problema que el Árbol (cancelación) pero con 100 árboles → comparar AUC: el bosque suele ganar")
 
     with st.spinner("Entrenando Random Forest (100 árboles)…"):
         metricas_rf, conf_rf, feat_imp_rf, dist_estados = entrenar_rf(spark, df)
@@ -531,7 +700,7 @@ with tabs[4]:
     col_a, col_b = st.columns(2)
 
     with col_a:
-        labels_rf = {0: "Normal", 1: "Cancelada/No asistió"}
+        labels_rf = {0: "No cancela", 1: "Cancela"}
         conf_rf["cat_str"]  = conf_rf["categoria"].map(labels_rf)
         conf_rf["pred_str"] = conf_rf["prediction"].map(labels_rf)
         pivot_rf = conf_rf.pivot(index="cat_str", columns="pred_str", values="count").fillna(0)
@@ -542,7 +711,7 @@ with tabs[4]:
         st.plotly_chart(fig, use_container_width=True)
 
     with col_b:
-        feat_names = ["duracion_min", "precio", "ingreso"]
+        feat_names = FEATURES_CANCEL
         fig2 = px.bar(x=feat_names, y=feat_imp_rf,
                       title="Importancia de Variables — Random Forest",
                       color=feat_imp_rf, color_continuous_scale=[[0, "#333"], [1, RED]],
@@ -717,6 +886,176 @@ with tabs[6]:
         st.info(f"**Cluster {cl} — {perfil_txt}**: "
                 f"Precio ${row['precio']:.0f} | Ingreso ${row['ingreso']:.0f} | "
                 f"Duración {row['duracion_min']:.0f} min")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 8 — SEGMENTACIÓN DE CLIENTES
+# ══════════════════════════════════════════════════════════════════════════════
+with tabs[7]:
+    st.subheader("Unidad IV — Segmentación de Clientes (RFM + KMeans)")
+    st.caption("1000 clientes reales agrupados en 4 segmentos por comportamiento de consumo")
+
+    seg_pdf, seg_sil, seg_stats = entrenar_segmentacion(spark, df)
+
+    dist = seg_pdf["segmento"].value_counts().reset_index()
+    dist.columns = ["segmento", "clientes"]
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Clientes", f"{len(seg_pdf):,}")
+    c2.metric("Segmentos", seg_pdf["segmento"].nunique())
+    c3.metric("Silhouette", seg_sil, delta="Bueno" if seg_sil > 0.5 else "Aceptable" if seg_sil > 0.2 else "Débil")
+    vip = int(dist.loc[dist["segmento"] == "VIP", "clientes"].sum())
+    c4.metric("Clientes VIP", vip)
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        fig = px.pie(dist, values="clientes", names="segmento", hole=0.45,
+                     title="Distribución de Clientes por Segmento",
+                     color_discrete_sequence=px.colors.qualitative.Set2)
+        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+        st.plotly_chart(fig, use_container_width=True)
+    with col_b:
+        fig2 = px.scatter(seg_pdf, x="total_citas", y="gasto_total", color="segmento",
+                          size="gasto_promedio", hover_name="cliente",
+                          title="Clientes: Frecuencia vs Gasto (color = segmento)",
+                          labels={"total_citas": "Total de citas", "gasto_total": "Gasto total ($MXN)"},
+                          color_discrete_sequence=px.colors.qualitative.Set2)
+        fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+        st.plotly_chart(fig2, use_container_width=True)
+
+    st.subheader("Perfil promedio de cada segmento")
+    st.dataframe(seg_stats[["segmento", "num_clientes", "citas_prom", "gasto_total_prom",
+                            "ticket_prom", "cancelacion_pct", "dias_inactivo_prom"]],
+                 use_container_width=True, hide_index=True)
+    st.subheader("Top clientes VIP")
+    st.dataframe(seg_pdf[seg_pdf["segmento"] == "VIP"]
+                 .sort_values("gasto_total", ascending=False)
+                 .head(10)[["cliente", "nivel", "total_citas", "gasto_total", "gasto_promedio"]],
+                 use_container_width=True, hide_index=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 9 — CHURN / ABANDONO
+# ══════════════════════════════════════════════════════════════════════════════
+with tabs[8]:
+    st.subheader("Unidad III — Predicción de Abandono (Churn)")
+    st.caption("Random Forest · churn = cliente con recencia > percentil 70 · features SIN la recencia (sin fuga)")
+
+    ch_metrics, ch_imp, ch_riesgo, (n_riesgo, n_total) = entrenar_churn(spark, df)
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("AUC-ROC", ch_metrics["AUC"], help="Evaluado en datos no vistos")
+    c2.metric("F1-Score", ch_metrics["F1"])
+    c3.metric("Clientes en riesgo", f"{n_riesgo:,}", delta=f"{n_riesgo/n_total*100:.0f}% del total")
+    c4.metric("Umbral recencia", f"{ch_metrics['umbral']:.0f} días")
+
+    col_a, col_b = st.columns([1, 1])
+    with col_a:
+        imp_df = pd.DataFrame(ch_imp, columns=["variable", "importancia"]).sort_values("importancia")
+        fig = px.bar(imp_df, x="importancia", y="variable", orientation="h",
+                     title="Qué anticipa el abandono (importancia de variables)",
+                     color="importancia", color_continuous_scale=[[0, "#333"], [1, RED]], text_auto=".3f")
+        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                          font_color="white", coloraxis_showscale=False)
+        st.plotly_chart(fig, use_container_width=True)
+    with col_b:
+        fig2 = go.Figure(go.Pie(values=[n_riesgo, n_total - n_riesgo],
+                                labels=["En riesgo", "Estables"], hole=0.5,
+                                marker_colors=[RED, GREEN]))
+        fig2.update_layout(title="Clientes en riesgo vs estables",
+                           paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+        st.plotly_chart(fig2, use_container_width=True)
+
+    st.subheader("Clientes con mayor probabilidad de abandono")
+    ch_show = ch_riesgo.copy()
+    ch_show["prob"] = ch_show["prob"].apply(lambda x: f"{x:.1f}%")
+    ch_show.columns = ["Cliente", "Nivel", "Citas", "Ticket prom.", "Cancel %", "Días sin cita", "Prob. abandono"]
+    st.dataframe(ch_show, use_container_width=True, hide_index=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 10 — RECOMENDACIÓN
+# ══════════════════════════════════════════════════════════════════════════════
+with tabs[9]:
+    st.subheader("Unidad IV — Recomendación de Servicios (FP-Growth)")
+    st.caption("Market Basket Analysis: 'los clientes que piden A también piden B'")
+
+    freq_pdf, rules_pdf, pop_pdf = entrenar_recomendacion(spark, df)
+
+    c1, c2 = st.columns(2)
+    c1.metric("Reglas encontradas", len(rules_pdf))
+    c2.metric("Servicios analizados", pop_pdf["servicio"].nunique())
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        fig = px.bar(pop_pdf.head(12).sort_values("veces_pedido"),
+                     x="veces_pedido", y="servicio", orientation="h", color="categoria",
+                     title="Servicios más solicitados",
+                     labels={"veces_pedido": "Veces pedido", "servicio": ""},
+                     color_discrete_sequence=px.colors.qualitative.Set2)
+        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+        st.plotly_chart(fig, use_container_width=True)
+    with col_b:
+        st.markdown("**Itemsets frecuentes (servicios que aparecen juntos)**")
+        st.dataframe(freq_pdf.rename(columns={"items": "Servicios", "freq": "Frecuencia"}),
+                     use_container_width=True, hide_index=True)
+
+    st.subheader("Reglas de asociación (ordenadas por lift)")
+    if len(rules_pdf) > 0:
+        st.dataframe(rules_pdf.rename(columns={
+            "si_pide": "Si pide", "tambien_pedira": "También pedirá",
+            "confianza_pct": "Confianza %", "lift": "Lift", "support_pct": "Support %"}),
+            use_container_width=True, hide_index=True)
+        st.caption("lift > 1.5 → recomendación fuerte · lift > 1.0 → válida · lift < 1.0 → no recomendar")
+    else:
+        st.warning("No se encontraron reglas con los umbrales actuales (dataset con poca co-ocurrencia por cliente).")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 11 — DEMANDA
+# ══════════════════════════════════════════════════════════════════════════════
+with tabs[10]:
+    st.subheader("Unidad IV — Predicción de Demanda y Horarios")
+    st.caption("Patrones temporales + GBT: ¿cuántas citas esperar por hora, día y mes?")
+
+    dem_hora, dem_dia, dem_mes, dem_r2, dem_imp = analizar_demanda(spark, df)
+
+    hora_pico = dem_hora.loc[dem_hora["citas"].idxmax()]
+    dia_pico  = dem_dia.loc[dem_dia["citas"].idxmax()]
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Hora pico", f"{int(hora_pico['hora']):02d}:00", delta=f"{int(hora_pico['citas'])} citas")
+    c2.metric("Día más activo", dia_pico["dia_nombre"], delta=f"{int(dia_pico['citas'])} citas")
+    c3.metric("R² modelo GBT", dem_r2)
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        fig = px.bar(dem_hora, x="hora", y="citas", title="Demanda por hora del día",
+                     color="citas", color_continuous_scale=[[0, "#333"], [1, GOLD]],
+                     labels={"hora": "Hora", "citas": "Citas"})
+        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                          font_color="white", coloraxis_showscale=False)
+        st.plotly_chart(fig, use_container_width=True)
+    with col_b:
+        fig2 = px.bar(dem_dia, x="dia_nombre", y="citas", title="Demanda por día de la semana",
+                      color="citas", color_continuous_scale=[[0, "#333"], [1, BLUE]],
+                      labels={"dia_nombre": "", "citas": "Citas"})
+        fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                           font_color="white", coloraxis_showscale=False)
+        st.plotly_chart(fig2, use_container_width=True)
+
+    col_c, col_d = st.columns([2, 1])
+    with col_c:
+        fig3 = go.Figure()
+        fig3.add_trace(go.Bar(x=dem_mes["mes_nombre"], y=dem_mes["citas"], name="Citas", marker_color=GOLD))
+        fig3.add_trace(go.Scatter(x=dem_mes["mes_nombre"], y=dem_mes["cancel_pct"], name="Cancelación %",
+                                  yaxis="y2", line=dict(color=RED, width=2)))
+        fig3.update_layout(title="Estacionalidad mensual: citas y % cancelación",
+                           yaxis=dict(title="Citas"), yaxis2=dict(title="Cancel %", overlaying="y", side="right"),
+                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+        st.plotly_chart(fig3, use_container_width=True)
+    with col_d:
+        imp_df = pd.DataFrame(dem_imp, columns=["variable", "importancia"]).sort_values("importancia")
+        fig4 = px.bar(imp_df, x="importancia", y="variable", orientation="h",
+                      title="Qué determina la demanda", color="importancia",
+                      color_continuous_scale=[[0, "#333"], [1, GREEN]], text_auto=".3f")
+        fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                           font_color="white", coloraxis_showscale=False)
+        st.plotly_chart(fig4, use_container_width=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FOOTER
