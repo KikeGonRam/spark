@@ -443,19 +443,19 @@ st.divider()
 tabs = st.tabs([
     "Resumen Ejecutivo",
     "MapReduce / ETL",
-    "Regresion",
-    "Arbol de Decision",
-    "Random Forest",
-    "KMeans",
-    "PCA",
-    "Segmentacion Clientes",
-    "Churn / Abandono",
-    "Recomendacion",
-    "Demanda",
     "Pagos y Calidad",
     "Fidelizacion",
     "Utilizacion Barberos",
     "Inventario",
+    "Regresion",
+    "Arbol de Decision",
+    "Random Forest",
+    "Churn / Abandono",
+    "Demanda",
+    "KMeans",
+    "PCA",
+    "Segmentacion Clientes",
+    "Recomendacion",
 ])
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -577,9 +577,185 @@ with tabs[1]:
     st.dataframe(resumen_display, use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 3 — REGRESIÓN
+# TAB 3 — PAGOS Y CALIDAD DE DATOS
 # ══════════════════════════════════════════════════════════════════════════════
 with tabs[2]:
+    st.subheader("Unidad II — Pagos y Calidad de Datos")
+    st.caption("Colección `payments` (11,016 docs) — reconciliación de cobros y métodos de pago")
+
+    pagos_pdf = analizar_pagos(spark)
+    if pagos_pdf is None or pagos_pdf.empty:
+        st.warning("Sin datos de pagos disponibles.")
+    else:
+        n_metodos = pagos_pdf["metodo_pago"].nunique()
+        n_procesadores = pagos_pdf["procesado_por"].nunique()
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Pagos registrados", f"{len(pagos_pdf):,}")
+        c2.metric("Propina total", f"${pagos_pdf['propina'].sum():,.0f}")
+        c3.metric("Métodos de pago", n_metodos)
+        c4.metric("Procesadores distintos", n_procesadores)
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            metodos = pagos_pdf["metodo_pago"].value_counts().reset_index()
+            metodos.columns = ["metodo", "pagos"]
+            fig = px.pie(metodos, values="pagos", names="metodo", hole=0.45,
+                         title="Distribución por método de pago",
+                         color_discrete_sequence=px.colors.qualitative.Set2)
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig, use_container_width=True)
+        with col_b:
+            top_svc = pagos_pdf.groupby("servicio")["monto"].sum().reset_index().sort_values("monto", ascending=False).head(10)
+            fig2 = px.bar(top_svc, x="monto", y="servicio", orientation="h",
+                          title="Monto cobrado por servicio (top 10)",
+                          color="monto", color_continuous_scale=[[0, "#333"], [1, GOLD]])
+            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig2, use_container_width=True)
+
+        st.info(f"**Calidad de datos:** {n_procesadores} cuenta(s) procesan el 100% de los cobros "
+                f"y se usa {n_metodos} método de pago (`{pagos_pdf['metodo_pago'].iloc[0]}`) — "
+                f"el sistema centraliza el cobro y no hay variedad de métodos digitales todavía.",
+                icon=":material/info:")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 4 — FIDELIZACIÓN
+# ══════════════════════════════════════════════════════════════════════════════
+with tabs[3]:
+    st.subheader("Unidad II — Programa de Fidelización")
+    st.caption("Colección `loyalty_transactions` (11,016 docs) — puntos ganados por cliente")
+
+    loy_pdf = analizar_fidelizacion(spark)
+    if loy_pdf is None or loy_pdf.empty:
+        st.warning("Sin transacciones de lealtad disponibles.")
+    else:
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Transacciones", f"{len(loy_pdf):,}")
+        c2.metric("Puntos totales otorgados", f"{loy_pdf['puntos'].sum():,.0f}")
+        c3.metric("Clientes con puntos", loy_pdf["cliente"].nunique())
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            por_nivel = loy_pdf.groupby(["cliente", "nivel"])["puntos"].sum().reset_index()
+            resumen_nivel = por_nivel.groupby("nivel")["puntos"].mean().reset_index()
+            fig = px.bar(resumen_nivel, x="nivel", y="puntos",
+                         title="Puntos promedio por nivel de cliente",
+                         color="nivel", color_discrete_sequence=[BLUE, GOLD])
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig, use_container_width=True)
+        with col_b:
+            top_clientes = por_nivel.sort_values("puntos", ascending=False).head(10)
+            fig2 = px.bar(top_clientes, x="puntos", y="cliente", orientation="h",
+                          title="Top 10 clientes por puntos acumulados",
+                          color="puntos", color_continuous_scale=[[0, "#333"], [1, GOLD]])
+            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig2, use_container_width=True)
+
+        tendencia = loy_pdf[loy_pdf["anio"] > 0].groupby(["anio", "mes"])["puntos"].sum().reset_index()
+        tendencia["periodo"] = tendencia["anio"].astype(str) + "-" + tendencia["mes"].astype(str).str.zfill(2)
+        fig3 = px.line(tendencia.sort_values("periodo"), x="periodo", y="puntos", markers=True,
+                       title="Tendencia mensual de puntos otorgados")
+        fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+        st.plotly_chart(fig3, use_container_width=True)
+
+        st.info("Todas las transacciones son de tipo `ganado` — aún no hay canjes registrados. "
+                "Oportunidad: activar la redención de puntos por servicios/productos.",
+                icon=":material/info:")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 5 — UTILIZACIÓN DE BARBEROS
+# ══════════════════════════════════════════════════════════════════════════════
+with tabs[4]:
+    st.subheader("Unidad II — Utilización de Barberos (oferta vs demanda)")
+    st.caption("Colección `barber_schedules` (175 docs) — horas disponibles vs horas ocupadas")
+
+    horarios, util = analizar_utilizacion(pdf)
+    if util is None or util.empty:
+        st.warning("Sin datos de horarios disponibles.")
+    else:
+        ranking = (util.groupby("barbero")
+                       .agg(utilizacion_prom=("utilizacion_pct", "mean"))
+                       .round(1).reset_index().sort_values("utilizacion_prom", ascending=False))
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Barberos con agenda", horarios["barbero"].nunique())
+        c2.metric("Utilización promedio del equipo", f"{ranking['utilizacion_prom'].mean():.1f}%")
+        c3.metric("Sobrecargados (>80%)", int((ranking["utilizacion_prom"] > 80).sum()))
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            fig = px.bar(ranking, x="utilizacion_prom", y="barbero", orientation="h",
+                         title="Utilización promedio por barbero",
+                         color="utilizacion_prom", color_continuous_scale=[[0, BLUE], [0.5, GOLD], [1, RED]])
+            fig.add_vline(x=80, line_dash="dash", line_color=RED, annotation_text="Sobrecarga")
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              font_color="white", coloraxis_showscale=False,
+                              yaxis=dict(autorange="reversed"), height=600)
+            st.plotly_chart(fig, use_container_width=True)
+        with col_b:
+            util_disp = util.copy()
+            util_disp["dia_nombre"] = util_disp["dia_semana"].map(DIAS_SEMANA)
+            heat = util_disp.pivot_table(index="barbero", columns="dia_nombre",
+                                         values="utilizacion_pct", aggfunc="mean")
+            fig2 = px.imshow(heat, text_auto=".0f", color_continuous_scale=[[0, DARK], [1, GOLD]],
+                             title="Mapa de calor: utilización por barbero y día",
+                             labels=dict(color="Utilización %"))
+            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white", height=600)
+            st.plotly_chart(fig2, use_container_width=True)
+
+        st.info(f"Equipo con utilización promedio de {ranking['utilizacion_prom'].mean():.1f}%. "
+                f"Redistribuir citas de barberos/días saturados hacia los de baja utilización "
+                f"optimiza la agenda sin contratar personal adicional.", icon=":material/info:")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 6 — INVENTARIO
+# ══════════════════════════════════════════════════════════════════════════════
+with tabs[5]:
+    st.subheader("Unidad II — Salud del Inventario")
+    st.caption("Colección `products` (31 docs) — stock, márgenes y categorías")
+
+    productos = analizar_inventario()
+    if productos is None or productos.empty:
+        st.warning("Sin productos disponibles.")
+    else:
+        alertas = productos[productos["necesita_reorden"]]
+        venta = productos[productos["tipo"] == "venta_cliente"]
+        valor_inventario = (productos["precio_compra"] * productos["stock_actual"]).sum()
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Productos", len(productos))
+        c2.metric("Alertas de reorden", len(alertas))
+        c3.metric("Margen promedio (venta)", f"{venta['margen_pct'].mean():.1f}%" if len(venta) else "N/A")
+        c4.metric("Valor de inventario", f"${valor_inventario:,.0f}")
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            cat = productos["categoria"].value_counts().reset_index()
+            cat.columns = ["categoria", "productos"]
+            fig = px.bar(cat, x="productos", y="categoria", orientation="h",
+                         title="Productos por categoría",
+                         color="productos", color_continuous_scale=[[0, "#333"], [1, PURPLE]])
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig, use_container_width=True)
+        with col_b:
+            fig2 = px.bar(venta.sort_values("margen_pct", ascending=False).head(10),
+                          x="margen_pct", y="producto", orientation="h",
+                          title="Top 10 productos por margen (%)",
+                          color="margen_pct", color_continuous_scale=[[0, "#333"], [1, GREEN]])
+            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig2, use_container_width=True)
+
+        if len(alertas):
+            st.warning(f"{len(alertas)} producto(s) requieren reorden inmediato.", icon=":material/warning:")
+        else:
+            st.success("Inventario saludable — sin alertas de reorden.")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 7 — REGRESIÓN
+# ══════════════════════════════════════════════════════════════════════════════
+with tabs[6]:
     st.subheader("Unidad III — Análisis Supervisado: Regresión")
     st.caption("Predicción de la FACTURACIÓN DIARIA (target real, sin fuga) · 6 modelos · R², MSE, MAE")
     st.info("Se predice el ingreso **por día** a partir del volumen de citas y el calendario. "
@@ -642,9 +818,9 @@ with tabs[2]:
         st.success(f"Mejor modelo: **{tabla_reg.loc[mejor_idx, 'Modelo']}** — R²={tabla_reg.loc[mejor_idx, 'R²']:.4f}")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 4 — ÁRBOL DE DECISIÓN
+# TAB 8 — ÁRBOL DE DECISIÓN
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[3]:
+with tabs[7]:
     st.subheader("Unidad III — Árbol de Decisión")
     st.caption("Clasificación honesta: ¿se CANCELARÁ la cita?  1 = cancelada  |  0 = resto  ·  clases desbalanceadas → AUC")
 
@@ -717,9 +893,9 @@ with tabs[3]:
         """)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 5 — RANDOM FOREST
+# TAB 9 — RANDOM FOREST
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[4]:
+with tabs[8]:
     st.subheader("Unidad III — Random Forest")
     st.caption("Mismo problema que el Árbol (cancelación) pero con 100 árboles → comparar AUC: el bosque suele ganar")
 
@@ -781,9 +957,98 @@ with tabs[4]:
         st.plotly_chart(fig4, use_container_width=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 6 — KMEANS
+# TAB 10 — CHURN / ABANDONO
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[5]:
+with tabs[9]:
+    st.subheader("Unidad III — Predicción de Abandono (Churn)")
+    st.caption("Random Forest · churn = cliente con recencia > percentil 70 · features SIN la recencia (sin fuga)")
+
+    ch_metrics, ch_imp, ch_riesgo, (n_riesgo, n_total) = entrenar_churn(spark, df)
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("AUC-ROC", ch_metrics["AUC"], help="Evaluado en datos no vistos")
+    c2.metric("F1-Score", ch_metrics["F1"])
+    c3.metric("Clientes en riesgo", f"{n_riesgo:,}", delta=f"{n_riesgo/n_total*100:.0f}% del total")
+    c4.metric("Umbral recencia", f"{ch_metrics['umbral']:.0f} días")
+
+    col_a, col_b = st.columns([1, 1])
+    with col_a:
+        imp_df = pd.DataFrame(ch_imp, columns=["variable", "importancia"]).sort_values("importancia")
+        fig = px.bar(imp_df, x="importancia", y="variable", orientation="h",
+                     title="Qué anticipa el abandono (importancia de variables)",
+                     color="importancia", color_continuous_scale=[[0, "#333"], [1, RED]], text_auto=".3f")
+        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                          font_color="white", coloraxis_showscale=False)
+        st.plotly_chart(fig, use_container_width=True)
+    with col_b:
+        fig2 = go.Figure(go.Pie(values=[n_riesgo, n_total - n_riesgo],
+                                labels=["En riesgo", "Estables"], hole=0.5,
+                                marker_colors=[RED, GREEN]))
+        fig2.update_layout(title="Clientes en riesgo vs estables",
+                           paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+        st.plotly_chart(fig2, use_container_width=True)
+
+    st.subheader("Clientes con mayor probabilidad de abandono")
+    ch_show = ch_riesgo.copy()
+    ch_show["prob"] = ch_show["prob"].apply(lambda x: f"{x:.1f}%")
+    ch_show.columns = ["Cliente", "Nivel", "Citas", "Ticket prom.", "Cancel %", "Días sin cita", "Prob. abandono"]
+    st.dataframe(ch_show, use_container_width=True, hide_index=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 11 — DEMANDA
+# ══════════════════════════════════════════════════════════════════════════════
+with tabs[10]:
+    st.subheader("Unidad III — Predicción de Demanda y Horarios")
+    st.caption("Regresión supervisada (GBT): ¿cuántas citas esperar por hora, día y mes?")
+
+    dem_hora, dem_dia, dem_mes, dem_r2, dem_imp = analizar_demanda(spark, df)
+
+    hora_pico = dem_hora.loc[dem_hora["citas"].idxmax()]
+    dia_pico  = dem_dia.loc[dem_dia["citas"].idxmax()]
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Hora pico", f"{int(hora_pico['hora']):02d}:00", delta=f"{int(hora_pico['citas'])} citas")
+    c2.metric("Día más activo", dia_pico["dia_nombre"], delta=f"{int(dia_pico['citas'])} citas")
+    c3.metric("R² modelo GBT", dem_r2)
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        fig = px.bar(dem_hora, x="hora", y="citas", title="Demanda por hora del día",
+                     color="citas", color_continuous_scale=[[0, "#333"], [1, GOLD]],
+                     labels={"hora": "Hora", "citas": "Citas"})
+        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                          font_color="white", coloraxis_showscale=False)
+        st.plotly_chart(fig, use_container_width=True)
+    with col_b:
+        fig2 = px.bar(dem_dia, x="dia_nombre", y="citas", title="Demanda por día de la semana",
+                      color="citas", color_continuous_scale=[[0, "#333"], [1, BLUE]],
+                      labels={"dia_nombre": "", "citas": "Citas"})
+        fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                           font_color="white", coloraxis_showscale=False)
+        st.plotly_chart(fig2, use_container_width=True)
+
+    col_c, col_d = st.columns([2, 1])
+    with col_c:
+        fig3 = go.Figure()
+        fig3.add_trace(go.Bar(x=dem_mes["mes_nombre"], y=dem_mes["citas"], name="Citas", marker_color=GOLD))
+        fig3.add_trace(go.Scatter(x=dem_mes["mes_nombre"], y=dem_mes["cancel_pct"], name="Cancelación %",
+                                  yaxis="y2", line=dict(color=RED, width=2)))
+        fig3.update_layout(title="Estacionalidad mensual: citas y % cancelación",
+                           yaxis=dict(title="Citas"), yaxis2=dict(title="Cancel %", overlaying="y", side="right"),
+                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+        st.plotly_chart(fig3, use_container_width=True)
+    with col_d:
+        imp_df = pd.DataFrame(dem_imp, columns=["variable", "importancia"]).sort_values("importancia")
+        fig4 = px.bar(imp_df, x="importancia", y="variable", orientation="h",
+                      title="Qué determina la demanda", color="importancia",
+                      color_continuous_scale=[[0, "#333"], [1, GREEN]], text_auto=".3f")
+        fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                           font_color="white", coloraxis_showscale=False)
+        st.plotly_chart(fig4, use_container_width=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 12 — KMEANS
+# ══════════════════════════════════════════════════════════════════════════════
+with tabs[11]:
     st.subheader("Unidad IV — KMeans Clustering")
     st.caption("Segmentación no supervisada de citas por duración, precio e ingreso")
 
@@ -845,9 +1110,9 @@ with tabs[5]:
     st.dataframe(centro_df.style.format("{:.2f}"), use_container_width=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 7 — PCA
+# TAB 13 — PCA
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[6]:
+with tabs[12]:
     st.subheader("Unidad IV — PCA + KMeans")
     st.caption("Reducción de dimensionalidad: 3 features → 2 componentes principales → clustering")
 
@@ -926,9 +1191,9 @@ with tabs[6]:
                 f"Duración {row['duracion_min']:.0f} min")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 8 — SEGMENTACIÓN DE CLIENTES
+# TAB 14 — SEGMENTACIÓN DE CLIENTES
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[7]:
+with tabs[13]:
     st.subheader("Unidad IV — Segmentación de Clientes (RFM + KMeans)")
     st.caption("1000 clientes reales agrupados en 4 segmentos por comportamiento de consumo")
 
@@ -970,47 +1235,9 @@ with tabs[7]:
                  use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 9 — CHURN / ABANDONO
+# TAB 15 — RECOMENDACIÓN
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[8]:
-    st.subheader("Unidad III — Predicción de Abandono (Churn)")
-    st.caption("Random Forest · churn = cliente con recencia > percentil 70 · features SIN la recencia (sin fuga)")
-
-    ch_metrics, ch_imp, ch_riesgo, (n_riesgo, n_total) = entrenar_churn(spark, df)
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("AUC-ROC", ch_metrics["AUC"], help="Evaluado en datos no vistos")
-    c2.metric("F1-Score", ch_metrics["F1"])
-    c3.metric("Clientes en riesgo", f"{n_riesgo:,}", delta=f"{n_riesgo/n_total*100:.0f}% del total")
-    c4.metric("Umbral recencia", f"{ch_metrics['umbral']:.0f} días")
-
-    col_a, col_b = st.columns([1, 1])
-    with col_a:
-        imp_df = pd.DataFrame(ch_imp, columns=["variable", "importancia"]).sort_values("importancia")
-        fig = px.bar(imp_df, x="importancia", y="variable", orientation="h",
-                     title="Qué anticipa el abandono (importancia de variables)",
-                     color="importancia", color_continuous_scale=[[0, "#333"], [1, RED]], text_auto=".3f")
-        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                          font_color="white", coloraxis_showscale=False)
-        st.plotly_chart(fig, use_container_width=True)
-    with col_b:
-        fig2 = go.Figure(go.Pie(values=[n_riesgo, n_total - n_riesgo],
-                                labels=["En riesgo", "Estables"], hole=0.5,
-                                marker_colors=[RED, GREEN]))
-        fig2.update_layout(title="Clientes en riesgo vs estables",
-                           paper_bgcolor="rgba(0,0,0,0)", font_color="white")
-        st.plotly_chart(fig2, use_container_width=True)
-
-    st.subheader("Clientes con mayor probabilidad de abandono")
-    ch_show = ch_riesgo.copy()
-    ch_show["prob"] = ch_show["prob"].apply(lambda x: f"{x:.1f}%")
-    ch_show.columns = ["Cliente", "Nivel", "Citas", "Ticket prom.", "Cancel %", "Días sin cita", "Prob. abandono"]
-    st.dataframe(ch_show, use_container_width=True, hide_index=True)
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 10 — RECOMENDACIÓN
-# ══════════════════════════════════════════════════════════════════════════════
-with tabs[9]:
+with tabs[14]:
     st.subheader("Unidad IV — Recomendación de Servicios (FP-Growth)")
     st.caption("Market Basket Analysis: 'los clientes que piden A también piden B'")
 
@@ -1043,233 +1270,6 @@ with tabs[9]:
         st.caption("lift > 1.5 → recomendación fuerte · lift > 1.0 → válida · lift < 1.0 → no recomendar")
     else:
         st.warning("No se encontraron reglas con los umbrales actuales (dataset con poca co-ocurrencia por cliente).")
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 11 — DEMANDA
-# ══════════════════════════════════════════════════════════════════════════════
-with tabs[10]:
-    st.subheader("Unidad IV — Predicción de Demanda y Horarios")
-    st.caption("Patrones temporales + GBT: ¿cuántas citas esperar por hora, día y mes?")
-
-    dem_hora, dem_dia, dem_mes, dem_r2, dem_imp = analizar_demanda(spark, df)
-
-    hora_pico = dem_hora.loc[dem_hora["citas"].idxmax()]
-    dia_pico  = dem_dia.loc[dem_dia["citas"].idxmax()]
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Hora pico", f"{int(hora_pico['hora']):02d}:00", delta=f"{int(hora_pico['citas'])} citas")
-    c2.metric("Día más activo", dia_pico["dia_nombre"], delta=f"{int(dia_pico['citas'])} citas")
-    c3.metric("R² modelo GBT", dem_r2)
-
-    col_a, col_b = st.columns(2)
-    with col_a:
-        fig = px.bar(dem_hora, x="hora", y="citas", title="Demanda por hora del día",
-                     color="citas", color_continuous_scale=[[0, "#333"], [1, GOLD]],
-                     labels={"hora": "Hora", "citas": "Citas"})
-        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                          font_color="white", coloraxis_showscale=False)
-        st.plotly_chart(fig, use_container_width=True)
-    with col_b:
-        fig2 = px.bar(dem_dia, x="dia_nombre", y="citas", title="Demanda por día de la semana",
-                      color="citas", color_continuous_scale=[[0, "#333"], [1, BLUE]],
-                      labels={"dia_nombre": "", "citas": "Citas"})
-        fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                           font_color="white", coloraxis_showscale=False)
-        st.plotly_chart(fig2, use_container_width=True)
-
-    col_c, col_d = st.columns([2, 1])
-    with col_c:
-        fig3 = go.Figure()
-        fig3.add_trace(go.Bar(x=dem_mes["mes_nombre"], y=dem_mes["citas"], name="Citas", marker_color=GOLD))
-        fig3.add_trace(go.Scatter(x=dem_mes["mes_nombre"], y=dem_mes["cancel_pct"], name="Cancelación %",
-                                  yaxis="y2", line=dict(color=RED, width=2)))
-        fig3.update_layout(title="Estacionalidad mensual: citas y % cancelación",
-                           yaxis=dict(title="Citas"), yaxis2=dict(title="Cancel %", overlaying="y", side="right"),
-                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
-        st.plotly_chart(fig3, use_container_width=True)
-    with col_d:
-        imp_df = pd.DataFrame(dem_imp, columns=["variable", "importancia"]).sort_values("importancia")
-        fig4 = px.bar(imp_df, x="importancia", y="variable", orientation="h",
-                      title="Qué determina la demanda", color="importancia",
-                      color_continuous_scale=[[0, "#333"], [1, GREEN]], text_auto=".3f")
-        fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                           font_color="white", coloraxis_showscale=False)
-        st.plotly_chart(fig4, use_container_width=True)
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 12 — PAGOS Y CALIDAD DE DATOS
-# ══════════════════════════════════════════════════════════════════════════════
-with tabs[11]:
-    st.subheader("Unidad II — Pagos y Calidad de Datos")
-    st.caption("Colección `payments` (11,016 docs) — reconciliación de cobros y métodos de pago")
-
-    pagos_pdf = analizar_pagos(spark)
-    if pagos_pdf is None or pagos_pdf.empty:
-        st.warning("Sin datos de pagos disponibles.")
-    else:
-        n_metodos = pagos_pdf["metodo_pago"].nunique()
-        n_procesadores = pagos_pdf["procesado_por"].nunique()
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Pagos registrados", f"{len(pagos_pdf):,}")
-        c2.metric("Propina total", f"${pagos_pdf['propina'].sum():,.0f}")
-        c3.metric("Métodos de pago", n_metodos)
-        c4.metric("Procesadores distintos", n_procesadores)
-
-        col_a, col_b = st.columns(2)
-        with col_a:
-            metodos = pagos_pdf["metodo_pago"].value_counts().reset_index()
-            metodos.columns = ["metodo", "pagos"]
-            fig = px.pie(metodos, values="pagos", names="metodo", hole=0.45,
-                         title="Distribución por método de pago",
-                         color_discrete_sequence=px.colors.qualitative.Set2)
-            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
-            st.plotly_chart(fig, use_container_width=True)
-        with col_b:
-            top_svc = pagos_pdf.groupby("servicio")["monto"].sum().reset_index().sort_values("monto", ascending=False).head(10)
-            fig2 = px.bar(top_svc, x="monto", y="servicio", orientation="h",
-                          title="Monto cobrado por servicio (top 10)",
-                          color="monto", color_continuous_scale=[[0, "#333"], [1, GOLD]])
-            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                               font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
-            st.plotly_chart(fig2, use_container_width=True)
-
-        st.info(f"**Calidad de datos:** {n_procesadores} cuenta(s) procesan el 100% de los cobros "
-                f"y se usa {n_metodos} método de pago (`{pagos_pdf['metodo_pago'].iloc[0]}`) — "
-                f"el sistema centraliza el cobro y no hay variedad de métodos digitales todavía.",
-                icon=":material/info:")
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 13 — FIDELIZACIÓN
-# ══════════════════════════════════════════════════════════════════════════════
-with tabs[12]:
-    st.subheader("Unidad II — Programa de Fidelización")
-    st.caption("Colección `loyalty_transactions` (11,016 docs) — puntos ganados por cliente")
-
-    loy_pdf = analizar_fidelizacion(spark)
-    if loy_pdf is None or loy_pdf.empty:
-        st.warning("Sin transacciones de lealtad disponibles.")
-    else:
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Transacciones", f"{len(loy_pdf):,}")
-        c2.metric("Puntos totales otorgados", f"{loy_pdf['puntos'].sum():,.0f}")
-        c3.metric("Clientes con puntos", loy_pdf["cliente"].nunique())
-
-        col_a, col_b = st.columns(2)
-        with col_a:
-            por_nivel = loy_pdf.groupby(["cliente", "nivel"])["puntos"].sum().reset_index()
-            resumen_nivel = por_nivel.groupby("nivel")["puntos"].mean().reset_index()
-            fig = px.bar(resumen_nivel, x="nivel", y="puntos",
-                         title="Puntos promedio por nivel de cliente",
-                         color="nivel", color_discrete_sequence=[BLUE, GOLD])
-            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
-            st.plotly_chart(fig, use_container_width=True)
-        with col_b:
-            top_clientes = por_nivel.sort_values("puntos", ascending=False).head(10)
-            fig2 = px.bar(top_clientes, x="puntos", y="cliente", orientation="h",
-                          title="Top 10 clientes por puntos acumulados",
-                          color="puntos", color_continuous_scale=[[0, "#333"], [1, GOLD]])
-            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                               font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
-            st.plotly_chart(fig2, use_container_width=True)
-
-        tendencia = loy_pdf[loy_pdf["anio"] > 0].groupby(["anio", "mes"])["puntos"].sum().reset_index()
-        tendencia["periodo"] = tendencia["anio"].astype(str) + "-" + tendencia["mes"].astype(str).str.zfill(2)
-        fig3 = px.line(tendencia.sort_values("periodo"), x="periodo", y="puntos", markers=True,
-                       title="Tendencia mensual de puntos otorgados")
-        fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
-        st.plotly_chart(fig3, use_container_width=True)
-
-        st.info("Todas las transacciones son de tipo `ganado` — aún no hay canjes registrados. "
-                "Oportunidad: activar la redención de puntos por servicios/productos.",
-                icon=":material/info:")
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 14 — UTILIZACIÓN DE BARBEROS
-# ══════════════════════════════════════════════════════════════════════════════
-with tabs[13]:
-    st.subheader("Unidad II — Utilización de Barberos (oferta vs demanda)")
-    st.caption("Colección `barber_schedules` (175 docs) — horas disponibles vs horas ocupadas")
-
-    horarios, util = analizar_utilizacion(pdf)
-    if util is None or util.empty:
-        st.warning("Sin datos de horarios disponibles.")
-    else:
-        ranking = (util.groupby("barbero")
-                       .agg(utilizacion_prom=("utilizacion_pct", "mean"))
-                       .round(1).reset_index().sort_values("utilizacion_prom", ascending=False))
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Barberos con agenda", horarios["barbero"].nunique())
-        c2.metric("Utilización promedio del equipo", f"{ranking['utilizacion_prom'].mean():.1f}%")
-        c3.metric("Sobrecargados (>80%)", int((ranking["utilizacion_prom"] > 80).sum()))
-
-        col_a, col_b = st.columns(2)
-        with col_a:
-            fig = px.bar(ranking, x="utilizacion_prom", y="barbero", orientation="h",
-                         title="Utilización promedio por barbero",
-                         color="utilizacion_prom", color_continuous_scale=[[0, BLUE], [0.5, GOLD], [1, RED]])
-            fig.add_vline(x=80, line_dash="dash", line_color=RED, annotation_text="Sobrecarga")
-            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                              font_color="white", coloraxis_showscale=False,
-                              yaxis=dict(autorange="reversed"), height=600)
-            st.plotly_chart(fig, use_container_width=True)
-        with col_b:
-            util_disp = util.copy()
-            util_disp["dia_nombre"] = util_disp["dia_semana"].map(DIAS_SEMANA)
-            heat = util_disp.pivot_table(index="barbero", columns="dia_nombre",
-                                         values="utilizacion_pct", aggfunc="mean")
-            fig2 = px.imshow(heat, text_auto=".0f", color_continuous_scale=[[0, DARK], [1, GOLD]],
-                             title="Mapa de calor: utilización por barbero y día",
-                             labels=dict(color="Utilización %"))
-            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white", height=600)
-            st.plotly_chart(fig2, use_container_width=True)
-
-        st.info(f"Equipo con utilización promedio de {ranking['utilizacion_prom'].mean():.1f}%. "
-                f"Redistribuir citas de barberos/días saturados hacia los de baja utilización "
-                f"optimiza la agenda sin contratar personal adicional.", icon=":material/info:")
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 15 — INVENTARIO
-# ══════════════════════════════════════════════════════════════════════════════
-with tabs[14]:
-    st.subheader("Unidad II — Salud del Inventario")
-    st.caption("Colección `products` (31 docs) — stock, márgenes y categorías")
-
-    productos = analizar_inventario()
-    if productos is None or productos.empty:
-        st.warning("Sin productos disponibles.")
-    else:
-        alertas = productos[productos["necesita_reorden"]]
-        venta = productos[productos["tipo"] == "venta_cliente"]
-        valor_inventario = (productos["precio_compra"] * productos["stock_actual"]).sum()
-
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Productos", len(productos))
-        c2.metric("Alertas de reorden", len(alertas))
-        c3.metric("Margen promedio (venta)", f"{venta['margen_pct'].mean():.1f}%" if len(venta) else "N/A")
-        c4.metric("Valor de inventario", f"${valor_inventario:,.0f}")
-
-        col_a, col_b = st.columns(2)
-        with col_a:
-            cat = productos["categoria"].value_counts().reset_index()
-            cat.columns = ["categoria", "productos"]
-            fig = px.bar(cat, x="productos", y="categoria", orientation="h",
-                         title="Productos por categoría",
-                         color="productos", color_continuous_scale=[[0, "#333"], [1, PURPLE]])
-            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                              font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
-            st.plotly_chart(fig, use_container_width=True)
-        with col_b:
-            fig2 = px.bar(venta.sort_values("margen_pct", ascending=False).head(10),
-                          x="margen_pct", y="producto", orientation="h",
-                          title="Top 10 productos por margen (%)",
-                          color="margen_pct", color_continuous_scale=[[0, "#333"], [1, GREEN]])
-            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                               font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
-            st.plotly_chart(fig2, use_container_width=True)
-
-        if len(alertas):
-            st.warning(f"{len(alertas)} producto(s) requieren reorden inmediato.", icon=":material/warning:")
-        else:
-            st.success("Inventario saludable — sin alertas de reorden.")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FOOTER
