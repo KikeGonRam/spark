@@ -21,7 +21,9 @@ import pandas as pd
 import numpy as np
 
 from config.mongo_spark_conexion_sinnulos import (
-    FEATURES_CANCEL, DIAS_SEMANA, MESES, get_clientes_df
+    FEATURES_CANCEL, DIAS_SEMANA, MESES, get_clientes_df,
+    get_pagos_df, get_loyalty_df, get_horarios_df, get_utilizacion_barberos_df,
+    get_productos_df,
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -366,6 +368,31 @@ def analizar_demanda(_spark, _df):
     imp = list(zip(["mes", "dia_semana", "hora"], [round(float(x), 4) for x in gbt.featureImportances.toArray()]))
     return hora, dia, mes, r2, imp
 
+@st.cache_resource(show_spinner="Analizando pagos y calidad de datos…")
+def analizar_pagos(_spark):
+    pagos_sdf = get_pagos_df(_spark)
+    if pagos_sdf is None:
+        return None
+    pdf = pagos_sdf.toPandas()
+    return pdf
+
+@st.cache_resource(show_spinner="Analizando programa de fidelización…")
+def analizar_fidelizacion(_spark):
+    loy_sdf = get_loyalty_df(_spark)
+    if loy_sdf is None:
+        return None
+    return loy_sdf.toPandas()
+
+@st.cache_resource(show_spinner="Calculando utilización de barberos…")
+def analizar_utilizacion(_df_pandas):
+    horarios = get_horarios_df()
+    util = get_utilizacion_barberos_df(_df_pandas)
+    return horarios, util
+
+@st.cache_resource(show_spinner="Cargando inventario de productos…")
+def analizar_inventario():
+    return get_productos_df()
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
@@ -425,6 +452,10 @@ tabs = st.tabs([
     "Churn / Abandono",
     "Recomendacion",
     "Demanda",
+    "Pagos y Calidad",
+    "Fidelizacion",
+    "Utilizacion Barberos",
+    "Inventario",
 ])
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1059,6 +1090,182 @@ with tabs[10]:
         fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                            font_color="white", coloraxis_showscale=False)
         st.plotly_chart(fig4, use_container_width=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 12 — PAGOS Y CALIDAD DE DATOS
+# ══════════════════════════════════════════════════════════════════════════════
+with tabs[11]:
+    st.subheader("Unidad II — Pagos y Calidad de Datos")
+    st.caption("Colección `payments` (11,016 docs) — reconciliación de cobros y métodos de pago")
+
+    pagos_pdf = analizar_pagos(spark)
+    if pagos_pdf is None or pagos_pdf.empty:
+        st.warning("Sin datos de pagos disponibles.")
+    else:
+        n_metodos = pagos_pdf["metodo_pago"].nunique()
+        n_procesadores = pagos_pdf["procesado_por"].nunique()
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Pagos registrados", f"{len(pagos_pdf):,}")
+        c2.metric("Propina total", f"${pagos_pdf['propina'].sum():,.0f}")
+        c3.metric("Métodos de pago", n_metodos)
+        c4.metric("Procesadores distintos", n_procesadores)
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            metodos = pagos_pdf["metodo_pago"].value_counts().reset_index()
+            metodos.columns = ["metodo", "pagos"]
+            fig = px.pie(metodos, values="pagos", names="metodo", hole=0.45,
+                         title="Distribución por método de pago",
+                         color_discrete_sequence=px.colors.qualitative.Set2)
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig, use_container_width=True)
+        with col_b:
+            top_svc = pagos_pdf.groupby("servicio")["monto"].sum().reset_index().sort_values("monto", ascending=False).head(10)
+            fig2 = px.bar(top_svc, x="monto", y="servicio", orientation="h",
+                          title="Monto cobrado por servicio (top 10)",
+                          color="monto", color_continuous_scale=[[0, "#333"], [1, GOLD]])
+            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig2, use_container_width=True)
+
+        st.info(f"**Calidad de datos:** {n_procesadores} cuenta(s) procesan el 100% de los cobros "
+                f"y se usa {n_metodos} método de pago (`{pagos_pdf['metodo_pago'].iloc[0]}`) — "
+                f"el sistema centraliza el cobro y no hay variedad de métodos digitales todavía.",
+                icon=":material/info:")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 13 — FIDELIZACIÓN
+# ══════════════════════════════════════════════════════════════════════════════
+with tabs[12]:
+    st.subheader("Unidad II — Programa de Fidelización")
+    st.caption("Colección `loyalty_transactions` (11,016 docs) — puntos ganados por cliente")
+
+    loy_pdf = analizar_fidelizacion(spark)
+    if loy_pdf is None or loy_pdf.empty:
+        st.warning("Sin transacciones de lealtad disponibles.")
+    else:
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Transacciones", f"{len(loy_pdf):,}")
+        c2.metric("Puntos totales otorgados", f"{loy_pdf['puntos'].sum():,.0f}")
+        c3.metric("Clientes con puntos", loy_pdf["cliente"].nunique())
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            por_nivel = loy_pdf.groupby(["cliente", "nivel"])["puntos"].sum().reset_index()
+            resumen_nivel = por_nivel.groupby("nivel")["puntos"].mean().reset_index()
+            fig = px.bar(resumen_nivel, x="nivel", y="puntos",
+                         title="Puntos promedio por nivel de cliente",
+                         color="nivel", color_discrete_sequence=[BLUE, GOLD])
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig, use_container_width=True)
+        with col_b:
+            top_clientes = por_nivel.sort_values("puntos", ascending=False).head(10)
+            fig2 = px.bar(top_clientes, x="puntos", y="cliente", orientation="h",
+                          title="Top 10 clientes por puntos acumulados",
+                          color="puntos", color_continuous_scale=[[0, "#333"], [1, GOLD]])
+            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig2, use_container_width=True)
+
+        tendencia = loy_pdf[loy_pdf["anio"] > 0].groupby(["anio", "mes"])["puntos"].sum().reset_index()
+        tendencia["periodo"] = tendencia["anio"].astype(str) + "-" + tendencia["mes"].astype(str).str.zfill(2)
+        fig3 = px.line(tendencia.sort_values("periodo"), x="periodo", y="puntos", markers=True,
+                       title="Tendencia mensual de puntos otorgados")
+        fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+        st.plotly_chart(fig3, use_container_width=True)
+
+        st.info("Todas las transacciones son de tipo `ganado` — aún no hay canjes registrados. "
+                "Oportunidad: activar la redención de puntos por servicios/productos.",
+                icon=":material/info:")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 14 — UTILIZACIÓN DE BARBEROS
+# ══════════════════════════════════════════════════════════════════════════════
+with tabs[13]:
+    st.subheader("Unidad II — Utilización de Barberos (oferta vs demanda)")
+    st.caption("Colección `barber_schedules` (175 docs) — horas disponibles vs horas ocupadas")
+
+    horarios, util = analizar_utilizacion(pdf)
+    if util is None or util.empty:
+        st.warning("Sin datos de horarios disponibles.")
+    else:
+        ranking = (util.groupby("barbero")
+                       .agg(utilizacion_prom=("utilizacion_pct", "mean"))
+                       .round(1).reset_index().sort_values("utilizacion_prom", ascending=False))
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Barberos con agenda", horarios["barbero"].nunique())
+        c2.metric("Utilización promedio del equipo", f"{ranking['utilizacion_prom'].mean():.1f}%")
+        c3.metric("Sobrecargados (>80%)", int((ranking["utilizacion_prom"] > 80).sum()))
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            fig = px.bar(ranking, x="utilizacion_prom", y="barbero", orientation="h",
+                         title="Utilización promedio por barbero",
+                         color="utilizacion_prom", color_continuous_scale=[[0, BLUE], [0.5, GOLD], [1, RED]])
+            fig.add_vline(x=80, line_dash="dash", line_color=RED, annotation_text="Sobrecarga")
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              font_color="white", coloraxis_showscale=False,
+                              yaxis=dict(autorange="reversed"), height=600)
+            st.plotly_chart(fig, use_container_width=True)
+        with col_b:
+            util_disp = util.copy()
+            util_disp["dia_nombre"] = util_disp["dia_semana"].map(DIAS_SEMANA)
+            heat = util_disp.pivot_table(index="barbero", columns="dia_nombre",
+                                         values="utilizacion_pct", aggfunc="mean")
+            fig2 = px.imshow(heat, text_auto=".0f", color_continuous_scale=[[0, DARK], [1, GOLD]],
+                             title="Mapa de calor: utilización por barbero y día",
+                             labels=dict(color="Utilización %"))
+            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white", height=600)
+            st.plotly_chart(fig2, use_container_width=True)
+
+        st.info(f"Equipo con utilización promedio de {ranking['utilizacion_prom'].mean():.1f}%. "
+                f"Redistribuir citas de barberos/días saturados hacia los de baja utilización "
+                f"optimiza la agenda sin contratar personal adicional.", icon=":material/info:")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 15 — INVENTARIO
+# ══════════════════════════════════════════════════════════════════════════════
+with tabs[14]:
+    st.subheader("Unidad II — Salud del Inventario")
+    st.caption("Colección `products` (31 docs) — stock, márgenes y categorías")
+
+    productos = analizar_inventario()
+    if productos is None or productos.empty:
+        st.warning("Sin productos disponibles.")
+    else:
+        alertas = productos[productos["necesita_reorden"]]
+        venta = productos[productos["tipo"] == "venta_cliente"]
+        valor_inventario = (productos["precio_compra"] * productos["stock_actual"]).sum()
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Productos", len(productos))
+        c2.metric("Alertas de reorden", len(alertas))
+        c3.metric("Margen promedio (venta)", f"{venta['margen_pct'].mean():.1f}%" if len(venta) else "N/A")
+        c4.metric("Valor de inventario", f"${valor_inventario:,.0f}")
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            cat = productos["categoria"].value_counts().reset_index()
+            cat.columns = ["categoria", "productos"]
+            fig = px.bar(cat, x="productos", y="categoria", orientation="h",
+                         title="Productos por categoría",
+                         color="productos", color_continuous_scale=[[0, "#333"], [1, PURPLE]])
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig, use_container_width=True)
+        with col_b:
+            fig2 = px.bar(venta.sort_values("margen_pct", ascending=False).head(10),
+                          x="margen_pct", y="producto", orientation="h",
+                          title="Top 10 productos por margen (%)",
+                          color="margen_pct", color_continuous_scale=[[0, "#333"], [1, GREEN]])
+            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig2, use_container_width=True)
+
+        if len(alertas):
+            st.warning(f"{len(alertas)} producto(s) requieren reorden inmediato.", icon=":material/warning:")
+        else:
+            st.success("Inventario saludable — sin alertas de reorden.")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FOOTER

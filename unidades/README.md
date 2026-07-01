@@ -33,6 +33,9 @@ Cada carpeta tiene su propio `README.md` con el checklist de entregables del doc
 ### Unidad II
 - [x] Esquema de Data Warehouse + tipos/fuentes + limpieza + config
 - [x] Repositorio de datos preprocesados (ETL → Parquet/CSV)
+- [x] Explotación de 5 colecciones reales adicionales: `payments`, `loyalty_transactions`,
+  `barber_schedules`, `products`, `barbershop_settings` (control de calidad, fidelización,
+  utilización de personal, inventario)
 
 ### Unidad III (supervisado)
 - [x] Documento: justificación + diseño + evaluación (MSE, MAE)
@@ -43,7 +46,7 @@ Cada carpeta tiene su propio `README.md` con el checklist de entregables del doc
 - [x] Modelos de agrupación (K-means) y reducción (PCA)
 
 ### Unidad V (visualización)
-- [x] Dashboard con gráficas personalizadas + interpretación
+- [x] Dashboard con gráficas personalizadas + interpretación (15 análisis en 1 app)
 - [x] Código fuente de gráficas (Matplotlib)
 
 ---

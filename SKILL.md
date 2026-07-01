@@ -52,8 +52,18 @@ services      → _id, nombre, categoria (barba|combo|corte|tratamiento), duraci
 barbers       → _id, user_id, activo   ← NO tiene campo 'nombre': se resuelve por user_id → users.name
 users         → _id, name, email, role_id
 clients       → _id, user_id, nivel (regular|vip), puntos, total_citas, fecha_nacimiento
-payments      → _id, appointment_id, monto, propina (=0 en datos actuales), metodo_pago
-loyalty_transactions → _id, client_id, puntos, tipo
+payments      → _id, appointment_id, monto, propina (=0 en datos actuales), metodo_pago,
+                created_by, comprobante_pdf   ← 11,016 docs, TODAS las citas completadas tienen pago
+loyalty_transactions → _id, client_id, puntos, tipo (solo "ganado", sin canjes aún)  ← 11,016 docs
+barber_schedules → _id, barber_id, day_of_week (Laravel 0=Dom..6=Sáb), start_time, end_time,
+                is_working   ← 175 docs = 25 barberos × 7 días
+products      → _id, nombre, categoria, tipo (insumo_trabajo|venta_cliente),
+                precio_compra, precio_venta (ambos BSON Decimal128 ← usar _num(), NO float() directo),
+                stock_actual, stock_minimo   ← 31 docs
+barbershop_settings → _id, horario_apertura, horario_cierre, politica_cancelacion  ← 1 doc
+
+  Vacías en la BD actual (NO usar): service_combos, combo_service, inventories,
+  inventory_movements, works, saved_works, work_images, raffle_results, comments, reactions
 ```
 
 > **Schema real verificado** (12,535 citas, 1000 clientes, 25 barberos):
@@ -68,7 +78,13 @@ loyalty_transactions → _id, client_id, puntos, tipo
 > hora, puntos_cliente, edad_cliente, client_id`. Los scripts 01–07 no se rompen.
 >
 > Helpers y constantes exportadas:
-> - `get_clientes_df(spark, df)` → RFM por cliente (usado por 08 y 09)
+> - `get_clientes_df(spark, df)` → RFM por cliente (usado por 08 y 09 de Unidad III)
+> - `get_pagos_df(spark)` → pagos + reconciliación con citas + quién procesó el cobro
+> - `get_loyalty_df(spark)` → puntos de lealtad por cliente/mes/nivel
+> - `get_horarios_df()` → horas disponibles por barbero/día (pandas, sin Spark)
+> - `get_utilizacion_barberos_df(df_pandas)` → % utilización real por barbero/día
+> - `get_productos_df()` → inventario con márgenes y alertas de reorden (pandas, sin Spark)
+> - `_num(v)` → convierte BSON Decimal128 a float (usar SIEMPRE con `products.precio_*`)
 > - `FEATURES_BASE = ["duracion_min","precio","ingreso"]` (compatibilidad)
 > - `FEATURES_CANCEL = ["duracion_min","precio","hora","dia_semana","mes"]` (clasificación honesta)
 > - `ESTADOS_VALIDOS`, `CATEGORIAS`, `DIAS_SEMANA`, `MESES`
