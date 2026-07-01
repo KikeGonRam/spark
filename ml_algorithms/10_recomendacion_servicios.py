@@ -1,210 +1,101 @@
 """
-UNIDAD III — Script 10: Recomendación de Servicios
+Unidad IV — Script 10: Recomendación de Servicios (Market Basket Analysis)
 
-Usa FP-Growth (Frequent Pattern Mining) para descubrir reglas de asociación:
-  "Clientes que solicitan servicio A también solicitan servicio B"
+  Usa FP-Growth para descubrir reglas de asociación entre servicios:
+     "Los clientes que piden A también tienden a pedir B"
 
-Una transacción = conjunto de servicios únicos que ha pedido un cliente.
-Métricas de asociación:
-  - Support:    % de clientes que piden {A, B} juntos
-  - Confidence: de los que piden A, ¿qué % también pide B?
-  - Lift:       ¿cuánto más probable es B dado A vs aleatoriamente?
+  Una transacción = conjunto de servicios distintos que ha pedido un cliente
+  (solo citas completadas/confirmadas). Métricas: support, confidence, lift.
+
+  Lee la capa de datos única (get_spark_session) → una sola conexión, nombres
+  de cliente reales y categoría de servicio ya disponibles.
+
+Equipo  : Equipo UrbanBlade — UTVT IDGS-93
+Materia : Extracción del conocimiento en bases de datos — MGTI. Héctor Velázquez Estrada
 """
-
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import (
-    col, count, collect_set, size, round as spark_round, desc
-)
+from config.mongo_spark_conexion_sinnulos import get_spark_session
+from pyspark.sql.functions import col, count, collect_set, size, round as sround, desc
 from pyspark.ml.fpm import FPGrowth
-from pymongo import MongoClient
-from dotenv import load_dotenv
-from pathlib import Path
-from urllib.parse import quote_plus
-import pandas as pd
 
-os.environ["PYSPARK_PYTHON"]        = sys.executable
-os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
-
-env_path = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(dotenv_path=env_path)
-
-mongo_uri = (f"mongodb+srv://{os.getenv('MONGO_USER')}:"
-             f"{quote_plus(os.getenv('MONGO_PASSWORD'))}@"
-             f"{os.getenv('MONGO_CLUSTER')}")
-db_name = os.getenv("MONGO_DB")
-
-spark = SparkSession.builder \
-    .appName("UrbanBlade-RecomendacionServicios") \
-    .config("spark.pyspark.python",        sys.executable) \
-    .config("spark.pyspark.driver.python", sys.executable) \
-    .getOrCreate()
-spark.sparkContext.setLogLevel("ERROR")
-
-print("\n" + "="*60)
-print("RECOMENDACIÓN DE SERVICIOS — UrbanBlade")
-print("="*60)
+print("\n" + "=" * 60)
+print("RECOMENDACIÓN DE SERVICIOS (Market Basket) — UrbanBlade")
+print("=" * 60)
 print("""
 Objetivo: "¿Qué servicios adicionales podemos recomendar?"
-
-Técnica: FP-Growth (Market Basket Analysis adaptado a barbería)
-  - En vez de productos de supermercado → servicios de barbería
-  - En vez de tickets de compra → historial de cada cliente
-  - Regla: Clientes que piden A → también tienden a pedir B
+Técnica : FP-Growth sobre el historial de servicios de cada cliente.
 """)
 
-# ── EXTRACCIÓN ─────────────────────────────────────────────────────────────────
-mc = MongoClient(mongo_uri)
-db = mc[db_name]
+# ── DATOS: capa única, solo citas efectivas ────────────────────────────────────
+spark, df, _ = get_spark_session()
+df_ok = df.filter(col("estado").isin("completada", "confirmada")) \
+          .filter(col("client_id") != "")
 
-services_map = {str(s["_id"]): s for s in db["services"].find(
-    {}, {"_id": 1, "nombre": 1, "categoria": 1})}
-users_map = {str(u["_id"]): u for u in db["users"].find(
-    {}, {"_id": 1, "name": 1})}
-
-raw_apts = list(db["appointments"].find(
-    {"estado": {"$in": ["completada", "confirmada"]}},
-    {"_id": 0, "client_id": 1, "service_id": 1, "estado": 1}
-))
-mc.close()
-
-records = []
-for apt in raw_apts:
-    cid = str(apt.get("client_id", ""))
-    sid = str(apt.get("service_id", ""))
-    if not cid or cid in ("None", ""):
-        continue
-    svc_nombre = services_map.get(sid, {}).get("nombre", "")
-    if not svc_nombre:
-        continue
-    records.append({
-        "client_id": cid,
-        "nombre_cliente": users_map.get(cid, {}).get("name", "Cliente"),
-        "servicio": svc_nombre,
-        "categoria": services_map.get(sid, {}).get("categoria", ""),
-    })
-
-df_citas = spark.createDataFrame(pd.DataFrame(records))
-total_clientes = df_citas.select("client_id").distinct().count()
-total_citas    = df_citas.count()
-
-print(f"Citas completadas/confirmadas: {total_citas}")
-print(f"Clientes con historial:        {total_clientes}")
+print(f"Citas completadas/confirmadas: {df_ok.count()}")
+print(f"Clientes con historial:        {df_ok.select('client_id').distinct().count()}")
 
 # ── TRANSACCIONES POR CLIENTE ──────────────────────────────────────────────────
-print("\n" + "="*60)
-print("TRANSACCIONES: historial de servicios por cliente")
-print("="*60)
-
-df_transactions = df_citas.groupBy("client_id", "nombre_cliente").agg(
-    collect_set("servicio").alias("items")
-).filter(size(col("items")) >= 1)
-
-print(f"\nClientes con al menos 1 servicio: {df_transactions.count()}")
-print("\nEjemplos de historial por cliente:")
-df_transactions.select("nombre_cliente", "items") \
-    .orderBy(size(col("items")).desc()) \
-    .show(8, truncate=False)
+df_tx = (df_ok.groupBy("client_id", "cliente")
+              .agg(collect_set("servicio").alias("items"))
+              .filter(size(col("items")) >= 1))
+print(f"\nClientes con al menos 1 servicio: {df_tx.count()}")
+print("Ejemplos de historial (nombres reales):")
+df_tx.select("cliente", "items").orderBy(size(col("items")).desc()).show(8, truncate=False)
 
 # ── FP-GROWTH ──────────────────────────────────────────────────────────────────
-print("="*60)
+print("=" * 60)
 print("FP-GROWTH — Patrones frecuentes y reglas de asociación")
-print("="*60)
+print("=" * 60)
+fp_model = FPGrowth(itemsCol="items", minSupport=0.10, minConfidence=0.20).fit(df_tx)
 
-fpgrowth = FPGrowth(
-    itemsCol="items",
-    minSupport=0.10,       # al menos 10% de los clientes
-    minConfidence=0.20,    # 20% de confianza mínima
-)
-fp_model = fpgrowth.fit(df_transactions)
-
-# Itemsets frecuentes
 print("\nItemsets frecuentes (servicios que aparecen juntos):")
-freq_items = fp_model.freqItemsets.orderBy("freq", ascending=False)
-freq_items.show(15, truncate=False)
+fp_model.freqItemsets.orderBy("freq", ascending=False).show(15, truncate=False)
 
-# Reglas de asociación
 rules = fp_model.associationRules
-total_rules = rules.count()
-print(f"\nReglas de asociación encontradas: {total_rules}")
-
-if total_rules > 0:
-    print("\nReglas de asociación (ordenadas por lift):")
+n_rules = rules.count()
+print(f"Reglas de asociación encontradas: {n_rules}")
+if n_rules > 0:
+    print("\nReglas ordenadas por lift:")
     rules.select(
         col("antecedent").alias("si_pide"),
-        col("consequent").alias("también_pedirá"),
-        spark_round(col("confidence") * 100, 1).alias("confianza_pct"),
-        spark_round(col("lift"), 3).alias("lift"),
-        spark_round(col("support") * 100, 1).alias("support_pct"),
+        col("consequent").alias("tambien_pedira"),
+        sround(col("confidence") * 100, 1).alias("confianza_pct"),
+        sround(col("lift"), 3).alias("lift"),
+        sround(col("support") * 100, 1).alias("support_pct"),
     ).orderBy(desc("lift")).show(20, truncate=False)
-
     print("""
-  Cómo leer las reglas:
-    confianza_pct → De los clientes que piden A, el X% también pide B
-    lift          → Cuánto más probable es B dado A (>1 = relación positiva)
-    support_pct   → % de clientes totales que piden A y B juntos
-
-  lift > 1.5 → Recomendación fuerte
-  lift > 1.0 → Recomendación válida
-  lift < 1.0 → No recomendar (correlación negativa)
+  Cómo leer: confianza = de los que piden A, % que también pide B
+             lift > 1.5 → recomendación fuerte | lift > 1.0 → válida
 """)
 else:
-    print("\n  No se encontraron reglas con los umbrales actuales.")
-    print("  (Dataset pequeño — se muestran patrones de co-ocurrencia alternativos)")
+    print("  No se encontraron reglas con los umbrales actuales.")
 
 # ── CO-OCURRENCIA POR CATEGORÍA ────────────────────────────────────────────────
-print("="*60)
-print("ANÁLISIS ALTERNATIVO: Co-ocurrencia por categoría")
-print("="*60)
-print("""
-¿Qué categorías de servicio piden los mismos clientes?
-(Análogo a las reglas de asociación, a nivel de categoría)
-""")
+print("=" * 60)
+print("Co-ocurrencia por categoría (clientes que mezclan categorías)")
+print("=" * 60)
+df_cat = (df_ok.groupBy("client_id", "cliente")
+               .agg(collect_set("categoria").alias("categorias"))
+               .filter(size(col("categorias")) >= 2))
+print(f"Clientes que usaron 2+ categorías: {df_cat.count()}")
+df_cat.select("cliente", "categorias").show(10, truncate=False)
 
-df_cat_tx = df_citas.groupBy("client_id", "nombre_cliente").agg(
-    collect_set("categoria").alias("categorias")
-).filter(size(col("categorias")) >= 2)
-
-print(f"Clientes que usaron 2+ categorías: {df_cat_tx.count()}")
-df_cat_tx.select("nombre_cliente", "categorias").show(10, truncate=False)
-
-# ── RANKING DE SERVICIOS POR POPULARIDAD ───────────────────────────────────────
-print("="*60)
-print("POPULARIDAD DE SERVICIOS (base para recomendaciones)")
-print("="*60)
-
-df_pop = df_citas.groupBy("servicio", "categoria").agg(
+# ── POPULARIDAD DE SERVICIOS ───────────────────────────────────────────────────
+print("=" * 60)
+print("Popularidad de servicios (base para recomendaciones)")
+print("=" * 60)
+df_ok.groupBy("servicio", "categoria").agg(
     count("*").alias("veces_pedido"),
-    count("client_id").alias("clientes_distintos"),
-).orderBy("veces_pedido", ascending=False)
+    count("client_id").alias("citas"),
+).orderBy("veces_pedido", ascending=False).show(12, truncate=False)
 
-print("\nServicios más pedidos (candidatos para recomendar):")
-df_pop.show(12, truncate=False)
-
-# ── RECOMENDACIONES FINALES ────────────────────────────────────────────────────
-print("="*60)
-print("RESUMEN: REGLAS DE RECOMENDACIÓN")
-print("="*60)
 print("""
-Basado en el análisis FP-Growth y co-ocurrencia:
-
-  ACCIÓN RECOMENDADA EN EL SISTEMA:
-  ───────────────────────────────────────────────────────────────────
-  Cuando un cliente agenda un servicio de tipo "corte":
-    → Sugerir añadir "arreglo de barba" (+20% ticket promedio)
-
-  Cuando un cliente agenda "combo corte y barba":
-    → Sugerir "tratamiento capilar" (upsell de categoría premium)
-
-  Cuando un cliente solo ha pedido 1 tipo de servicio históricamente:
-    → Enviar promoción del servicio más frecuente en su misma categoría
-
-  IMPLEMENTACIÓN EN URBANBLADE:
-    - Al crear la cita: mostrar pop-up "También te puede interesar..."
-    - Email post-cita: "Clientes como tú también reservaron..."
-    - Dashboard admin: lista de oportunidades de upsell por cliente
+IMPLEMENTACIÓN EN URBANBLADE:
+  - Al crear la cita: pop-up "También te puede interesar..."
+  - Email post-cita: "Clientes como tú también reservaron..."
+  - Dashboard admin: oportunidades de upsell por cliente
 """)
 
 spark.stop()

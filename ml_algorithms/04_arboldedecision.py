@@ -1,8 +1,17 @@
-﻿"""
-Unidad III – Análisis Supervisado
+"""
+Unidad III – Análisis Supervisado (Clasificación)
 Script  : 04_arboldedecision.py
-Tema    : Clasificación con Árbol de Decisión — citas de alto valor (ingreso > $500 MXN)
-Métricas: Accuracy, Precision, Recall, F1-Score  (requeridas Unidad III)
+Tema    : Árbol de Decisión — ¿se CANCELARÁ esta cita?
+
+  PROBLEMA DE NEGOCIO: anticipar cancelaciones para reducir huecos en la agenda.
+  Target  : es_cancelada  (1 = cancelada, 0 = resto)
+  Features: duracion_min, precio, hora, dia_semana, mes   (SIN fuga — el estado
+            NO se usa como feature; se predice desde el contexto de la cita)
+
+  Metodología: un árbol es interpretable → mostramos sus reglas y la importancia
+  de cada variable. En el script 05 el mismo problema se resuelve con un BOSQUE
+  (ensemble) para comparar "un árbol vs muchos árboles".
+
 Datos   : MongoDB Atlas → barber_db (appointments + services + barbers + users)
 Equipo  : Equipo UrbanBlade
 Materia : Extracción del conocimiento en bases de datos – UTVT IDGS-93
@@ -12,105 +21,90 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pyspark.sql.functions import when, col
+from config.mongo_spark_conexion_sinnulos import get_spark_session, FEATURES_CANCEL
 from pyspark.ml.feature import VectorAssembler
 from pyspark.ml.classification import DecisionTreeClassifier
-from pyspark.ml.evaluation import MulticlassClassificationEvaluator, BinaryClassificationEvaluator
-from config.mongo_spark_conexion_sinnulos import get_spark_session
-
-# ─── 1. Cargar datos reales desde MongoDB Atlas ───────────────────────────────
-spark, df, df_vector = get_spark_session()
-print("\n===  UNIDAD III – ÁRBOL DE DECISIÓN – UrbanBlade  ===\n")
-print("Dataset original:")
-df.select("servicio", "barbero", "duracion_min", "precio", "ingreso", "estado").show(10)
-
-# ─── 2. Etiqueta de clasificación ────────────────────────────────────────────
-# Cita de ALTO VALOR (ingreso > $500 MXN) = 1  |  BAJO VALOR = 0
-# Umbral de $500: divide bien servicios básicos (corte ~$200) de premium (corte+barba ~$600+)
-UMBRAL = 500
-df = df.withColumn(
-    "label",
-    when(col("ingreso") > UMBRAL, 1).otherwise(0)
+from pyspark.ml.evaluation import (
+    MulticlassClassificationEvaluator, BinaryClassificationEvaluator
 )
+from pyspark.sql.functions import col
 
-print(f"\nDistribución de clases (umbral ingreso > ${UMBRAL} MXN):")
-df.groupBy("label").count().orderBy("label").show()
+# ─── 1. Cargar datos reales ───────────────────────────────────────────────────
+spark, df, _ = get_spark_session()
+print("\n===  UNIDAD III – ÁRBOL DE DECISIÓN (cancelación) – UrbanBlade  ===\n")
 
-df = df.dropna(subset=["duracion_min", "precio", "ingreso"])
+print("Distribución real de la etiqueta (es_cancelada):")
+df.groupBy("es_cancelada").count().orderBy("es_cancelada").show()
+tot   = df.count()
+canc  = df.filter(col("es_cancelada") == 1).count()
+print(f"  Tasa de cancelación real: {canc/tot*100:.1f}%  "
+      f"(clases desbalanceadas → AUC es más informativo que accuracy)\n")
 
-# ─── 3. Vectorización ────────────────────────────────────────────────────────
-assembler = VectorAssembler(
-    inputCols=["duracion_min", "precio", "ingreso"],
-    outputCol="features",
-    handleInvalid="skip"
-)
-df_ml   = assembler.transform(df)
-dataset = df_ml.select("features", "label")
+# ─── 2. Features honestas (contexto de la cita, NO el estado) ────────────────
+asm = VectorAssembler(inputCols=FEATURES_CANCEL, outputCol="features", handleInvalid="skip")
+ds  = asm.transform(df).select("features", col("es_cancelada").alias("label"),
+                               *FEATURES_CANCEL)
+train, test = ds.randomSplit([0.8, 0.2], seed=42)
+print(f"Features: {FEATURES_CANCEL}")
+print(f"Entrenamiento: {train.count()}  |  Prueba: {test.count()}\n")
 
-train_data, test_data = dataset.randomSplit([0.8, 0.2], seed=42)
-print(f"Entrenamiento: {train_data.count()} | Prueba: {test_data.count()}")
+# ─── 3. Entrenar Árbol de Decisión ────────────────────────────────────────────
+arbol = DecisionTreeClassifier(featuresCol="features", labelCol="label",
+                               maxDepth=5, seed=42)
+model = arbol.fit(train)
+preds = model.transform(test)
 
-# ─── 4. Entrenamiento ─────────────────────────────────────────────────────────
-dt    = DecisionTreeClassifier(featuresCol="features", labelCol="label", maxDepth=5)
-model = dt.fit(train_data)
-
-print("\nEstructura del árbol de decisión:")
-print(model.toDebugString)
-
-# ─── 5. Predicciones ──────────────────────────────────────────────────────────
-predictions = model.transform(test_data)
-print("\nEjemplo de predicciones:")
-predictions.select("features", "label", "prediction", "probability").show(10)
-
-# ─── 6. Evaluación completa – Unidad III requiere MSE/MAE para regresión;
-#         para clasificación: Accuracy, Precision, Recall, F1 ─────────────────
-def metric(name):
+# ─── 4. Métricas ──────────────────────────────────────────────────────────────
+def m(metric):
     return MulticlassClassificationEvaluator(
-        labelCol="label", predictionCol="prediction", metricName=name
-    ).evaluate(predictions)
+        labelCol="label", predictionCol="prediction", metricName=metric).evaluate(preds)
 
-accuracy  = metric("accuracy")
-precision = metric("weightedPrecision")
-recall    = metric("weightedRecall")
-f1        = metric("f1")
-auc       = BinaryClassificationEvaluator(
-    labelCol="label", metricName="areaUnderROC"
-).evaluate(predictions)
+acc  = m("accuracy")
+prec = m("weightedPrecision")
+rec  = m("weightedRecall")
+f1   = m("f1")
+auc  = BinaryClassificationEvaluator(labelCol="label", metricName="areaUnderROC").evaluate(preds)
 
-print("\n" + "=" * 50)
+print("=" * 52)
 print("MÉTRICAS DE EVALUACIÓN – ÁRBOL DE DECISIÓN")
-print("=" * 50)
-print(f"  Accuracy           : {accuracy:.4f}  ({accuracy*100:.1f}%)")
-print(f"  Precision (weighted): {precision:.4f}")
-print(f"  Recall (weighted)  : {recall:.4f}")
-print(f"  F1-Score (weighted): {f1:.4f}")
-print(f"  AUC-ROC            : {auc:.4f}")
+print("=" * 52)
+print(f"  Accuracy            : {acc:.4f}  ({acc*100:.1f}%)")
+print(f"  Precision (weighted): {prec:.4f}")
+print(f"  Recall (weighted)   : {rec:.4f}")
+print(f"  F1-Score (weighted) : {f1:.4f}")
+print(f"  AUC-ROC             : {auc:.4f}   ← métrica clave con clases desbalanceadas")
 
-# ─── 7. Matriz de confusión ────────────────────────────────────────────────────
-print("\nMATRIZ DE CONFUSIÓN:")
-print("  label=0 → ingreso ≤ $500  |  label=1 → ingreso > $500")
-predictions.groupBy("label", "prediction").count().orderBy("label", "prediction").show()
+# ─── 5. Matriz de confusión ───────────────────────────────────────────────────
+print("\nMatriz de confusión (label vs predicción):")
+preds.groupBy("label", "prediction").count().orderBy("label", "prediction").show()
 
-# ─── 8. Importancia de variables ──────────────────────────────────────────────
-nombres  = ["duracion_min", "precio", "ingreso"]
-importancias = model.featureImportances
-print("IMPORTANCIA DE VARIABLES:")
-for nombre, imp in zip(nombres, importancias):
+# ─── 6. Importancia de variables ──────────────────────────────────────────────
+print("IMPORTANCIA DE VARIABLES (qué predice mejor la cancelación):")
+importancias = list(model.featureImportances)
+for nombre, imp in sorted(zip(FEATURES_CANCEL, importancias), key=lambda x: -x[1]):
     barra = "█" * int(imp * 40)
-    print(f"  {nombre:<15} {imp:.4f}  {barra}")
+    print(f"  {nombre:<14} {imp:.4f}  {barra}")
 
-# ─── 9. Interpretación ───────────────────────────────────────────────────────
+# ─── 7. Reglas del árbol (interpretabilidad) ─────────────────────────────────
+print("\nREGLAS APRENDIDAS (primeros niveles del árbol):")
+reglas = model.toDebugString.splitlines()
+for linea in reglas[:22]:
+    print("  " + linea)
+if len(reglas) > 22:
+    print(f"  … ({len(reglas)-22} líneas más)")
+
+# ─── 8. Interpretación ────────────────────────────────────────────────────────
+var_top = max(zip(FEATURES_CANCEL, importancias), key=lambda x: x[1])
 print("\nINTERPRETACIÓN:")
-if accuracy > 0.85:
-    print(f"  Árbol de decisión con EXCELENTE precisión ({accuracy*100:.1f}%)")
-elif accuracy > 0.70:
-    print(f"  Árbol de decisión con BUENA precisión ({accuracy*100:.1f}%)")
+print(f"  Variable más predictiva: '{var_top[0]}' ({var_top[1]*100:.1f}%).")
+if auc > 0.70:
+    print(f"  AUC={auc:.2f}: el árbol distingue BIEN las citas con riesgo de cancelación.")
+elif auc > 0.60:
+    print(f"  AUC={auc:.2f}: capacidad MODERADA — útil como alerta temprana.")
 else:
-    print(f"  Árbol de decisión con precisión MODERADA ({accuracy*100:.1f}%)")
-
-print(f"  F1-Score de {f1:.2f} indica balance entre precisión y recall.")
-print(f"  AUC={auc:.2f}: {'excelente' if auc > 0.9 else 'buena' if auc > 0.75 else 'moderada'} "
-      f"capacidad discriminativa del modelo.")
+    print(f"  AUC={auc:.2f}: señal DÉBIL — la cancelación depende de factores externos.")
+print("  Acción: reforzar recordatorios en los horarios/servicios de mayor riesgo.")
+print("  (En el script 05, un Bosque Aleatorio mejora esta misma predicción.)")
 
 spark.stop()
 print("\nSesión Spark finalizada")
