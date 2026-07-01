@@ -12,7 +12,8 @@ user     = os.getenv("MONGO_USER")
 password = quote_plus(os.getenv("MONGO_PASSWORD"))
 cluster  = os.getenv("MONGO_CLUSTER")
 database = os.getenv("MONGO_DB")
-coll     = os.getenv("MONGO_COLLECTION")
+# Always use the dedicated synthetic collection — never touch the production 'appointments'
+coll     = os.getenv("MONGO_COLLECTION_SYNTHETIC", "appointments_synthetic")
 
 if not all([user, password, cluster, database, coll]):
     raise ValueError("Faltan variables en el archivo .env")

@@ -1,11 +1,11 @@
-"""
+﻿"""
 Unidad III / IV – Análisis Supervisado + No Supervisado
 Script  : 07_red_neural.py
 Tema    : Red Neuronal PyTorch para clasificación de nivel de ingreso de citas
           Patrón: Spark preprocesa y escala → PyTorch entrena
 Datos   : MongoDB Atlas → barber_db (appointments + services + barbers + users)
-Alumno  : KikeGonRam (Luis Enrique González Ramírez)
-Materia : Extracción del conocimiento en bases de datos – UTVT IDGS-84
+Equipo  : Equipo UrbanBlade
+Materia : Extracción del conocimiento en bases de datos – UTVT IDGS-93
 Docente : MGTI. Héctor Velázquez Estrada
 """
 import sys

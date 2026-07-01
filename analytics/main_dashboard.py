@@ -1,8 +1,8 @@
-"""
+﻿"""
 Dashboard Principal – UrbanBlade Analytics
 Unidades II–V | Materia: Extracción del conocimiento en bases de datos
-UTVT IDGS-84 | MGTI. Héctor Velázquez Estrada | Mayo–Agosto 2026
-Alumno: KikeGonRam (Luis Enrique González Ramírez)
+UTVT IDGS-93 | MGTI. Héctor Velázquez Estrada | Mayo–Agosto 2026
+Equipo: Equipo UrbanBlade
 
 Ejecutar:  streamlit run analytics/main_dashboard.py
 """
@@ -22,7 +22,7 @@ import numpy as np
 # ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="UrbanBlade Analytics",
-    page_icon="✂️",
+    page_icon="UB",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -34,6 +34,10 @@ GREEN  = "#2ecc71"
 RED    = "#e74c3c"
 BLUE   = "#3498db"
 PURPLE = "#9b59b6"
+
+st.markdown("""
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+""", unsafe_allow_html=True)
 
 st.markdown(f"""
 <style>
@@ -204,10 +208,10 @@ def entrenar_pca(_df_vector, _df):
 # SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown(f"<h1 style='color:{GOLD};font-size:28px;margin-bottom:0'>✂️ UrbanBlade</h1>", unsafe_allow_html=True)
-    st.caption("Extracción del conocimiento en BD · UTVT IDGS-84")
+    st.markdown(f"<h1 style='color:{GOLD};font-size:28px;margin-bottom:0'><i class='fas fa-scissors'></i>&nbsp; UrbanBlade</h1>", unsafe_allow_html=True)
+    st.caption("Extracción del conocimiento en BD · UTVT IDGS-93")
     st.divider()
-    st.markdown("**Alumno:** KikeGonRam")
+    st.markdown("**Equipo:** Equipo UrbanBlade")
     st.markdown("**Docente:** MGTI. Héctor Velázquez Estrada")
     st.markdown("**Período:** Mayo–Agosto 2026")
     st.divider()
@@ -228,7 +232,7 @@ except Exception as e:
 # ─────────────────────────────────────────────────────────────────────────────
 # HEADER + KPIs GLOBALES
 # ─────────────────────────────────────────────────────────────────────────────
-st.markdown(f"<h1 style='text-align:center;color:{GOLD};font-size:2.2rem;'>✂️ UrbanBlade Analytics Dashboard</h1>", unsafe_allow_html=True)
+st.markdown(f"<h1 style='text-align:center;color:{GOLD};font-size:2.2rem;'><i class='fas fa-scissors'></i>&nbsp; UrbanBlade Analytics Dashboard</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align:center;color:#888;margin-top:-10px;'>Extracción del conocimiento en bases de datos · Datos reales MongoDB Atlas</p>", unsafe_allow_html=True)
 st.divider()
 
@@ -246,13 +250,13 @@ st.divider()
 # TABS
 # ─────────────────────────────────────────────────────────────────────────────
 tabs = st.tabs([
-    "📊 Resumen General",
-    "🔄 MapReduce",
-    "📈 Regresión",
-    "🌳 Árbol de Decisión",
-    "🌲 Random Forest",
-    "🔵 KMeans",
-    "🔷 PCA",
+    "Resumen General",
+    "MapReduce / ETL",
+    "Regresion",
+    "Arbol de Decision",
+    "Random Forest",
+    "KMeans",
+    "PCA",
 ])
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -433,7 +437,7 @@ with tabs[2]:
             use_container_width=True, hide_index=True
         )
         mejor_idx = tabla_reg["R²"].idxmax()
-        st.success(f"✅ Mejor modelo: **{tabla_reg.loc[mejor_idx, 'Modelo']}** — R²={tabla_reg.loc[mejor_idx, 'R²']:.4f}")
+        st.success(f"Mejor modelo: **{tabla_reg.loc[mejor_idx, 'Modelo']}** — R²={tabla_reg.loc[mejor_idx, 'R²']:.4f}")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 4 — ÁRBOL DE DECISIÓN
@@ -720,7 +724,7 @@ with tabs[6]:
 st.divider()
 st.markdown(
     f"<p style='text-align:center;color:#555;font-size:11px;'>"
-    f"UrbanBlade Analytics · UTVT IDGS-84 · Extracción del conocimiento en bases de datos · "
-    f"MGTI. Héctor Velázquez Estrada · KikeGonRam</p>",
+    f"UrbanBlade Analytics · UTVT IDGS-93 · Extracción del conocimiento en bases de datos · "
+    f"MGTI. Héctor Velázquez Estrada · Equipo UrbanBlade | IDGS-93</p>",
     unsafe_allow_html=True
 )

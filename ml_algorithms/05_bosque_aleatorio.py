@@ -1,11 +1,11 @@
-"""
+﻿"""
 Unidad III – Análisis Supervisado
 Script  : 05_bosque_aleatorio.py
 Tema    : Clasificación con Random Forest — predicción de citas canceladas
 Métricas: Accuracy, Precision, Recall, F1, AUC-ROC, Importancia de variables
 Datos   : MongoDB Atlas → barber_db (appointments + services + barbers + users)
-Alumno  : KikeGonRam (Luis Enrique González Ramírez)
-Materia : Extracción del conocimiento en bases de datos – UTVT IDGS-84
+Equipo  : Equipo UrbanBlade
+Materia : Extracción del conocimiento en bases de datos – UTVT IDGS-93
 Docente : MGTI. Héctor Velázquez Estrada
 """
 import sys

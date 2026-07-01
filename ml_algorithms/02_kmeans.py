@@ -1,10 +1,10 @@
-"""
+﻿"""
 Unidad IV – Análisis No Supervisado
 Script  : 02_kmeans.py
 Tema    : Clustering K-Means con Método del Codo y evaluación Silhouette
 Datos   : MongoDB Atlas → barber_db (appointments + services + barbers + users)
-Alumno  : KikeGonRam (Luis Enrique González Ramírez)
-Materia : Extracción del conocimiento en bases de datos – UTVT IDGS-84
+Equipo  : Equipo UrbanBlade
+Materia : Extracción del conocimiento en bases de datos – UTVT IDGS-93
 Docente : MGTI. Héctor Velázquez Estrada
 """
 import sys
