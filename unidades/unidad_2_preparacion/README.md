@@ -29,6 +29,23 @@ técnicas de limpieza · minería de datos · proceso ETL.
 | `06_mapreduce_etl.py` | 10 | MapReduce avanzado + interpretación + gráficas |
 | `07_mapreduce_basico.py` | 10 | MapReduce básico (ingresos por servicio) |
 
+## Fuentes de datos adicionales (colecciones reales antes sin usar)
+
+El caso de estudio original solo explotaba 4 colecciones (`appointments`, `services`,
+`barbers`, `users`). Estos scripts incorporan **5 colecciones más de `barber_db`** para
+un análisis integral del negocio:
+
+| Archivo | Colección(es) usadas | Tema |
+|---|---|---|
+| `08_calidad_pagos.py` | `payments` (11,016) + `barbershop_settings` | Reconciliación de cobros y validación de horario oficial |
+| `09_fidelizacion_clientes.py` | `loyalty_transactions` (11,016) | Puntos de lealtad, tendencia y nivel VIP vs regular |
+| `10_utilizacion_barberos.py` | `barber_schedules` (175) | Horas disponibles vs horas trabajadas por barbero |
+| `11_inventario_productos.py` | `products` (31) | Salud de stock, márgenes y categorías |
+
+> Colecciones descartadas por estar vacías en la BD actual: `service_combos`,
+> `combo_service`, `inventories`, `inventory_movements`, `works`, `saved_works`,
+> `work_images`, `raffle_results`, `comments`, `reactions`.
+
 ## Documentos de apoyo
 
 `doc_01`…`doc_06`: material teórico de cada tema (tipos/fuentes, DW, limpieza, minería, ETL, MapReduce).
@@ -38,6 +55,10 @@ técnicas de limpieza · minería de datos · proceso ETL.
 ## Cómo ejecutar
 
 ```bash
-spark-submit unidades/unidad_2_preparacion/05_etl.py          # genera el DW en data/etl_output/
+spark-submit unidades/unidad_2_preparacion/05_etl.py            # genera el DW en data/etl_output/
 spark-submit unidades/unidad_2_preparacion/06_mapreduce_etl.py
+spark-submit unidades/unidad_2_preparacion/08_calidad_pagos.py
+spark-submit unidades/unidad_2_preparacion/09_fidelizacion_clientes.py
+spark-submit unidades/unidad_2_preparacion/10_utilizacion_barberos.py
+python3      unidades/unidad_2_preparacion/11_inventario_productos.py   # no requiere Spark
 ```

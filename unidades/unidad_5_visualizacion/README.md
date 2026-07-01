@@ -10,7 +10,7 @@ Temas: técnicas de visualización y representación del conocimiento · herrami
 ## Entregables que pide el documento
 
 - [x] **Dashboard** con gráficas personalizadas e interpretación de resultados
-  → [`main_dashboard.py`](main_dashboard.py) (dashboard ejecutivo con 11 análisis)
+  → [`main_dashboard.py`](main_dashboard.py) (dashboard ejecutivo con **15 análisis**)
 - [x] **Repositorio con el código fuente para creación de gráficas** (Matplotlib)
   → [`dashboard_matplotlib.py`](dashboard_matplotlib.py)
 
@@ -20,9 +20,13 @@ Temas: técnicas de visualización y representación del conocimiento · herrami
 
 | Archivo | Herramienta | Descripción |
 |---|---|---|
-| `main_dashboard.py` | Streamlit + Plotly | **Dashboard ejecutivo unificado** — 11 tabs (Resumen, MapReduce, Regresión, Árbol, Random Forest, KMeans, PCA, Segmentación, Churn, Recomendación, Demanda) + KPIs |
+| `main_dashboard.py` | Streamlit + Plotly | **Dashboard ejecutivo unificado** — 15 tabs: Resumen, MapReduce, Regresión, Árbol, Random Forest, KMeans, PCA, Segmentación, Churn, Recomendación, Demanda, **Pagos y Calidad, Fidelización, Utilización Barberos, Inventario** |
 | `dashboard_matplotlib.py` | **Matplotlib** | 6 gráficas personalizadas (sesión 17 del programa) + interpretación |
 | `dashboards_individuales/` | Streamlit | Dashboards por algoritmo (versiones previas, integradas ya en `main_dashboard.py`) |
+
+Las 4 últimas pestañas usan colecciones reales de `barber_db` que antes no se explotaban
+(`payments`, `loyalty_transactions`, `barber_schedules`, `products`) — ver
+[`unidad_2_preparacion/README.md`](../unidad_2_preparacion/README.md).
 
 ---
 

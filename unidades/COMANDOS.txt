@@ -1,0 +1,74 @@
+========================================================================
+UrbanBlade Analytics — Comandos de ejecución (ordenados por Unidad I-V)
+UTVT IDGS-93 · Equipo UrbanBlade · MGTI. Héctor Velázquez Estrada
+========================================================================
+Ejecutar siempre desde la raíz del proyecto: ~/spark  (conda activate spark_env)
+
+------------------------------------------------------------------------
+# Unidad I — Introducción al análisis de datos
+------------------------------------------------------------------------
+# Solo documentos, sin scripts. Ver:
+#   unidades/unidad_1_introduccion/comparativa_ia_ml_dm_bigdata.md
+#   unidades/unidad_1_introduccion/caso_estudio_metodologia.md
+
+------------------------------------------------------------------------
+# Unidad II — Preparación de los datos
+------------------------------------------------------------------------
+spark-submit unidades/unidad_2_preparacion/01_tipos_fuentes_datos.py
+spark-submit unidades/unidad_2_preparacion/02_datawarehouse.py
+spark-submit unidades/unidad_2_preparacion/03_limpieza_datos.py
+spark-submit unidades/unidad_2_preparacion/04_mineria_datos.py
+spark-submit unidades/unidad_2_preparacion/05_etl.py
+spark-submit unidades/unidad_2_preparacion/06_mapreduce_etl.py
+spark-submit unidades/unidad_2_preparacion/07_mapreduce_basico.py
+
+# Nuevas fuentes de datos (5 colecciones reales antes sin usar)
+spark-submit unidades/unidad_2_preparacion/08_calidad_pagos.py
+spark-submit unidades/unidad_2_preparacion/09_fidelizacion_clientes.py
+spark-submit unidades/unidad_2_preparacion/10_utilizacion_barberos.py
+python3      unidades/unidad_2_preparacion/11_inventario_productos.py   # no requiere spark-submit
+
+------------------------------------------------------------------------
+# Unidad III — Análisis supervisado
+------------------------------------------------------------------------
+spark-submit unidades/unidad_3_supervisado/01_regresion.py
+spark-submit unidades/unidad_3_supervisado/02_arbol_decision.py
+spark-submit unidades/unidad_3_supervisado/03_bosque_aleatorio.py
+python3      unidades/unidad_3_supervisado/04_red_neuronal.py        # PyTorch, no requiere spark-submit
+spark-submit unidades/unidad_3_supervisado/05_prediccion_abandono.py
+spark-submit unidades/unidad_3_supervisado/06_prediccion_demanda.py
+
+------------------------------------------------------------------------
+# Unidad IV — Análisis no supervisado
+------------------------------------------------------------------------
+spark-submit unidades/unidad_4_no_supervisado/01_kmeans.py
+spark-submit unidades/unidad_4_no_supervisado/02_pca.py
+spark-submit unidades/unidad_4_no_supervisado/03_segmentacion_clientes.py
+spark-submit unidades/unidad_4_no_supervisado/04_recomendacion_servicios.py
+
+------------------------------------------------------------------------
+# Unidad V — Presentación y visualización
+------------------------------------------------------------------------
+
+# Matplotlib (Sesión 17 del programa) — genera dashboard_urbanblade_matplotlib.png
+spark-submit unidades/unidad_5_visualizacion/dashboard_matplotlib.py
+
+# Dashboard EJECUTIVO unificado (15 tabs: Resumen, MapReduce, Regresión, Árbol,
+# Random Forest, KMeans, PCA, Segmentación, Churn, Recomendación, Demanda,
+# Pagos y Calidad, Fidelización, Utilización Barberos, Inventario)
+streamlit run unidades/unidad_5_visualizacion/main_dashboard.py
+
+# Dashboards individuales (versiones previas, ya integradas en main_dashboard.py)
+streamlit run unidades/unidad_5_visualizacion/dashboards_individuales/dashboard_kmeans.py
+streamlit run unidades/unidad_5_visualizacion/dashboards_individuales/dashboard_regresion_models.py
+streamlit run unidades/unidad_5_visualizacion/dashboards_individuales/dashboard_pca.py
+streamlit run unidades/unidad_5_visualizacion/dashboards_individuales/dashboard_segmentacion_clientes.py
+streamlit run unidades/unidad_5_visualizacion/dashboards_individuales/dashboard_abandono.py
+streamlit run unidades/unidad_5_visualizacion/dashboards_individuales/dashboard_recomendacion.py
+streamlit run unidades/unidad_5_visualizacion/dashboards_individuales/dashboard_demanda.py
+
+========================================================================
+Recomendado para la exposición (lo más rápido de mostrar todo):
+========================================================================
+streamlit run unidades/unidad_5_visualizacion/main_dashboard.py      # el dashboard ejecutivo
+spark-submit unidades/unidad_3_supervisado/01_regresion.py           # regresión honesta (ya probado, funciona)

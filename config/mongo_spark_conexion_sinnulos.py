@@ -51,8 +51,18 @@ FEATURES_CANCEL   = ["duracion_min", "precio", "hora", "dia_semana", "mes"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Helpers de resolución de nombres / fechas
+# Helpers de resolución de nombres / fechas / tipos
 # ─────────────────────────────────────────────────────────────────────────────
+def _num(v, default=0.0):
+    """Convierte a float valores numéricos de Mongo, incluyendo BSON Decimal128
+    (usado en `products.precio_compra/precio_venta`, no soportado por float() directo)."""
+    if v is None:
+        return default
+    if hasattr(v, "to_decimal"):   # bson.decimal128.Decimal128
+        return float(v.to_decimal())
+    return float(v)
+
+
 def _to_dt(v):
     """Convierte un valor de Mongo (datetime | str | None) a datetime o None."""
     if v is None:
@@ -316,6 +326,173 @@ def get_clientes_df(spark, df=None, fecha_ref=None):
                when(col("meses_activo") < 1, lit(1.0)).otherwise(col("meses_activo")), 2)
     )
     return clientes
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: DataFrame de PAGOS (colección `payments`, 11,016 docs) — control de calidad
+# ─────────────────────────────────────────────────────────────────────────────
+def get_pagos_df(spark):
+    """Une `payments` con `appointments` para reconciliar cobros y detectar
+    quién procesó cada pago (created_by → users.name)."""
+    client, database = _connect_db()
+    db = client[database]
+    services_map, barbers_map, clients_map, users_map = _build_maps(db)
+
+    apt_map = {
+        str(a["_id"]): a
+        for a in db["appointments"].find(
+            {}, {"_id": 1, "service_id": 1, "barber_id": 1, "estado": 1, "fecha": 1})
+    }
+    pagos = list(db["payments"].find(
+        {}, {"_id": 0, "appointment_id": 1, "monto": 1, "propina": 1,
+             "metodo_pago": 1, "created_by": 1, "created_at": 1}))
+    client.close()
+
+    records = []
+    for p in pagos:
+        apt = apt_map.get(str(p.get("appointment_id", "")), {})
+        svc = services_map.get(str(apt.get("service_id", "")), {})
+        records.append({
+            "servicio":     svc.get("nombre", "Desconocido"),
+            "barbero":      _resolve_barbero(barbers_map.get(str(apt.get("barber_id", "")), {}), users_map),
+            "monto":        float(p.get("monto") or 0),
+            "propina":      float(p.get("propina") or 0),
+            "metodo_pago":  str(p.get("metodo_pago", "efectivo")),
+            "procesado_por": users_map.get(str(p.get("created_by", "")), {}).get("name", "Desconocido"),
+            "estado_cita":  str(apt.get("estado", "")),
+            "tiene_cita":   1 if apt else 0,
+        })
+
+    pdf = pd.DataFrame(records)
+    return spark.createDataFrame(pdf) if len(pdf) else None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: DataFrame de FIDELIZACIÓN (colección `loyalty_transactions`, 11,016 docs)
+# ─────────────────────────────────────────────────────────────────────────────
+def get_loyalty_df(spark):
+    """Puntos de lealtad por cliente con nombre real y fecha para análisis de tendencia."""
+    client, database = _connect_db()
+    db = client[database]
+    clients_map = {str(c["_id"]): c for c in db["clients"].find({}, {"_id": 1, "user_id": 1, "nivel": 1})}
+    users_map   = {str(u["_id"]): u for u in db["users"].find({}, {"_id": 1, "name": 1})}
+
+    txs = list(db["loyalty_transactions"].find(
+        {}, {"_id": 0, "client_id": 1, "tipo": 1, "puntos": 1, "created_at": 1}))
+    client.close()
+
+    records = []
+    for t in txs:
+        cli = clients_map.get(str(t.get("client_id", "")), {})
+        uid = str(cli.get("user_id", ""))
+        fdt = _to_dt(t.get("created_at"))
+        records.append({
+            "cliente":  users_map.get(uid, {}).get("name", "Cliente"),
+            "nivel":    str(cli.get("nivel", "regular")),
+            "tipo":     str(t.get("tipo", "ganado")),
+            "puntos":   float(t.get("puntos") or 0),
+            "mes":      fdt.month if fdt else 0,
+            "anio":     fdt.year if fdt else 0,
+        })
+    pdf = pd.DataFrame(records)
+    return spark.createDataFrame(pdf) if len(pdf) else None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: HORARIOS de barberos (colección `barber_schedules`, 175 docs = 25×7 días)
+# ─────────────────────────────────────────────────────────────────────────────
+def get_horarios_df():
+    """DataFrame pandas (tabla pequeña) con horas disponibles por barbero y día.
+
+    `day_of_week` en Mongo usa convención Laravel/Carbon (0=Domingo…6=Sábado);
+    se convierte a ISO (1=Lunes…7=Domingo) para cruzar con `dia_semana` del resto
+    del proyecto.
+    """
+    client, database = _connect_db()
+    db = client[database]
+    barbers_map = {str(b["_id"]): b for b in db["barbers"].find({}, {"_id": 1, "user_id": 1})}
+    users_map   = {str(u["_id"]): u for u in db["users"].find({}, {"_id": 1, "name": 1})}
+
+    def _hhmm_to_horas(hhmmss):
+        try:
+            h, m, *_ = str(hhmmss).split(":")
+            return int(h) + int(m) / 60.0
+        except Exception:
+            return 0.0
+
+    rows = []
+    for s in db["barber_schedules"].find({}):
+        dow_laravel = int(s.get("day_of_week", 0))
+        dia_iso = 7 if dow_laravel == 0 else dow_laravel
+        trabaja = str(s.get("is_working", "False")) == "True"
+        horas = max(0.0, _hhmm_to_horas(s.get("end_time")) - _hhmm_to_horas(s.get("start_time"))) if trabaja else 0.0
+        rows.append({
+            "barbero":          _resolve_barbero(barbers_map.get(str(s.get("barber_id", "")), {}), users_map),
+            "dia_semana":       dia_iso,
+            "is_working":       trabaja,
+            "horas_disponibles": horas,
+        })
+    client.close()
+    return pd.DataFrame(rows)
+
+
+def get_utilizacion_barberos_df(df):
+    """Compara horas DISPONIBLES (agenda) vs horas TRABAJADAS (duración real de
+    citas no canceladas) por barbero y día de la semana → tasa de utilización %.
+
+    `df` es el DataFrame principal (de `get_spark_session`); se usa su versión
+    pandas ya cargada para evitar una segunda pasada por Spark.
+    """
+    horarios = get_horarios_df()
+    if horarios.empty:
+        return pd.DataFrame()
+
+    ocupado = (df[df["estado"] != "cancelada"]
+               .groupby(["barbero", "dia_semana"])["duracion_min"]
+               .sum().div(60.0).reset_index()
+               .rename(columns={"duracion_min": "horas_ocupadas"}))
+
+    # nº de semanas cubiertas por el dataset (para escalar la disponibilidad semanal)
+    n_semanas = max(1, (pd.to_datetime(df["fecha"].str[:10]).max()
+                         - pd.to_datetime(df["fecha"].str[:10]).min()).days / 7.0)
+
+    disp = horarios.groupby(["barbero", "dia_semana"])["horas_disponibles"].sum().reset_index()
+    disp["horas_disponibles_total"] = disp["horas_disponibles"] * n_semanas
+
+    out = disp.merge(ocupado, on=["barbero", "dia_semana"], how="left")
+    out["horas_ocupadas"] = out["horas_ocupadas"].fillna(0.0)
+    out["utilizacion_pct"] = (out["horas_ocupadas"] /
+                              out["horas_disponibles_total"].replace(0, pd.NA) * 100).fillna(0.0).round(1)
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: INVENTARIO (colección `products`, 31 docs)
+# ─────────────────────────────────────────────────────────────────────────────
+def get_productos_df():
+    """DataFrame pandas con salud de inventario, márgenes y categoría."""
+    client, database = _connect_db()
+    db = client[database]
+    rows = []
+    for p in db["products"].find({}):
+        precio_compra = _num(p.get("precio_compra"))
+        precio_venta  = _num(p.get("precio_venta"))
+        stock_actual  = _num(p.get("stock_actual"))
+        stock_minimo  = _num(p.get("stock_minimo"))
+        rows.append({
+            "producto":      p.get("nombre", "Sin nombre"),
+            "categoria":     str(p.get("categoria", "otros")),
+            "tipo":          str(p.get("tipo", "insumo_trabajo")),
+            "precio_compra": precio_compra,
+            "precio_venta":  precio_venta,
+            "margen":        round(precio_venta - precio_compra, 2),
+            "margen_pct":    round((precio_venta - precio_compra) / precio_compra * 100, 1) if precio_compra else 0.0,
+            "stock_actual":  stock_actual,
+            "stock_minimo":  stock_minimo,
+            "necesita_reorden": stock_actual <= stock_minimo,
+        })
+    client.close()
+    return pd.DataFrame(rows)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

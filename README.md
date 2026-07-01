@@ -85,6 +85,11 @@ en PyMongo y entrega un DataFrame Spark enriquecido:
 appointments + services + barbers(→users) + clients(→users) → DataFrame Spark
 ```
 
+Además expone helpers para **5 colecciones adicionales** (`payments`, `loyalty_transactions`,
+`barber_schedules`, `products`, `barbershop_settings`) usadas en Unidad II y visualizadas
+en el dashboard ejecutivo (Unidad V): pagos/calidad, fidelización, utilización de barberos
+e inventario. Ver [`unidades/unidad_2_preparacion/README.md`](unidades/unidad_2_preparacion/README.md).
+
 ---
 
 ## Cómo ejecutar
