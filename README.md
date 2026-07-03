@@ -72,12 +72,31 @@ correctamente desde cualquier ruta (buscan la carpeta `config/`).
 
 ## Configuración MongoDB (`.env` en la raíz)
 
+**Nunca subas tu `.env` real a git** (ya está en `.gitignore`). El repositorio incluye
+[`.env.example`](.env.example) como plantilla — cópialo y llena los valores reales:
+
+```bash
+cp .env.example .env
+```
+
 ```env
-MONGO_USER=luis
-MONGO_PASSWORD=<tu_password>
-MONGO_CLUSTER=server.qiot9hi.mongodb.net
+# .env.example — plantilla, sin credenciales reales
+MONGO_USER=
+MONGO_PASSWORD=
+MONGO_CLUSTER=
 MONGO_DB=barber_db
 ```
+
+| Variable | De dónde se obtiene |
+|---|---|
+| `MONGO_USER` | Atlas → Database Access → Database Users |
+| `MONGO_PASSWORD` | Atlas → Database Access → Edit → Edit Password |
+| `MONGO_CLUSTER` | Atlas → Database → Connect → Drivers (solo el host, sin `mongodb+srv://` ni credenciales) |
+| `MONGO_DB` | `barber_db` (nombre fijo del proyecto) |
+
+Pide estos 4 valores al responsable del proyecto — **no se comparten por chat ni se
+suben al repositorio**, solo se entregan directamente al archivo `.env` local de cada
+integrante.
 
 La capa de datos (`config/mongo_spark_conexion_sinnulos.py`) hace un **JOIN de 4 colecciones**
 en PyMongo y entrega un DataFrame Spark enriquecido:
@@ -92,12 +111,36 @@ e inventario. Ver [`unidades/unidad_2_preparacion/README.md`](unidades/unidad_2_
 
 ---
 
-## Clonar y configurar desde cero
+## Clonar, configurar y ejecutar (guía completa)
 
 Para integrantes nuevos del equipo, en Windows con PowerShell:
 
 ```powershell
+# 1. Clona el repo y prepara el entorno (WSL + Java + Miniconda + spark_env)
+git clone https://github.com/KikeGonRam/spark.git
+cd spark
 .\setup-spark.ps1
+```
+
+El script se detendrá en el paso de `.env` la primera vez — en ese momento:
+
+```powershell
+# 2. Copia la plantilla y pide los valores reales al responsable del proyecto
+cp .env.example .env
+notepad .env    # pega MONGO_USER / MONGO_PASSWORD / MONGO_CLUSTER / MONGO_DB
+
+# 3. Vuelve a correr el script para validar la conexión a MongoDB Atlas
+.\setup-spark.ps1
+```
+
+Cuando termine sin errores, ya puedes ejecutar cualquier script (ver
+[`unidades/COMANDOS.txt`](unidades/COMANDOS.txt) para la lista completa):
+
+```bash
+# Desde WSL (Ubuntu), dentro de la carpeta del proyecto
+conda activate spark_env
+spark-submit unidades/unidad_3_supervisado/01_regresion.py
+streamlit run unidades/unidad_5_visualizacion/main_dashboard.py
 ```
 
 Instala/valida automáticamente: WSL2 + Ubuntu, Java (OpenJDK 11), Miniconda, el entorno
