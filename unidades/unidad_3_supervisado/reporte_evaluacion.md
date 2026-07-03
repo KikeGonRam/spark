@@ -55,10 +55,30 @@ las features. Por eso las métricas son realistas y defendibles.
 - **MSE** (Error Cuadrático Medio): penaliza errores grandes.
 - **MAE** (Error Absoluto Medio): error promedio en las unidades del target ($MXN).
 
-### Clasificación — con clases desbalanceadas (~8.4% cancelaciones)
+**Resultado real** (ejecución de `01_regresion.py` sobre 12,505 citas / 464 días,
+397 train / 67 test):
+
+| Modelo | R² | MSE | MAE |
+|---|---|---|---|
+| Lineal Simple (`num_citas`) | 0.968 | 374,185 | $517 |
+| Lineal Múltiple (+duración, día, mes) | 0.992 | 93,969 | $224 |
+| Ridge (L2) | 0.992 | 93,924 | $224 |
+| Lasso (L1) | 0.992 | 93,826 | $224 |
+| Polinomial (grado 2) | 0.9917 | 96,740 | $228 |
+| Cross Validation (3-fold) | 0.992 | 93,976 | $224 |
+
+**Mejor modelo: Lineal Múltiple** (R²=0.992). Interpretación: el volumen de citas y el
+calendario (día de la semana, mes) explican el 99.2% de la varianza en la facturación
+diaria — un resultado alto pero **legítimo**, ya que ninguna feature es una copia del
+target (a diferencia de predecir el precio de una cita individual, que sería trivial).
+
+### Clasificación — con clases desbalanceadas (7.7% cancelaciones)
 - **AUC-ROC**: métrica principal (robusta al desbalance).
 - **Accuracy / Precision / Recall / F1**: complementarias.
 - **Matriz de confusión** para ver falsos negativos (cancelaciones no detectadas).
+
+Distribución real de la variable objetivo (`es_cancelada`) sobre las 12,505 citas:
+`964 canceladas (7.7%) / 11,541 no canceladas (92.3%)`.
 
 ---
 

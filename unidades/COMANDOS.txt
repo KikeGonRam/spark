@@ -1,8 +1,14 @@
 ========================================================================
-UrbanBlade Analytics — Comandos de ejecución (ordenados por Unidad I-V)
+UrbanBlade Analytics — Comandos de ejecución (ordenados por Unidad I-VI)
 UTVT IDGS-93 · Equipo UrbanBlade · MGTI. Héctor Velázquez Estrada
 ========================================================================
 Ejecutar siempre desde la raíz del proyecto: ~/spark  (conda activate spark_env)
+
+# ¿Primera vez clonando el proyecto? Desde PowerShell (Windows), corre:
+#   .\setup-spark.ps1
+# Instala/valida WSL, Java, Miniconda, el entorno "spark_env" y las dependencias
+# de requirements.txt automáticamente. Ver unidades/unidad_6_caso_aplicado_laravel/
+# para el porqué de automatizar el onboarding.
 
 ------------------------------------------------------------------------
 # Unidad I — Introducción al análisis de datos
@@ -72,3 +78,4 @@ Recomendado para la exposición (lo más rápido de mostrar todo):
 ========================================================================
 streamlit run unidades/unidad_5_visualizacion/main_dashboard.py      # el dashboard ejecutivo
 spark-submit unidades/unidad_3_supervisado/01_regresion.py           # regresión honesta (ya probado, funciona)
+ 

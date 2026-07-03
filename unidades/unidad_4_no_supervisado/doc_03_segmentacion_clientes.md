@@ -1,7 +1,7 @@
 # Script 08: Segmentación de Clientes (RFM + KMeans)
 
 **Script**: `ml_algorithms/08_segmentacion_clientes.py`
-**Datos**: `barber_db` (MongoDB Atlas) — **12,535 citas, 1000 clientes reales**
+**Datos**: `barber_db` (MongoDB Atlas) — **12,505 citas, 1000 clientes reales**
 **Capa de datos**: `get_clientes_df()` (RFM por cliente) desde el conector único
 
 ---

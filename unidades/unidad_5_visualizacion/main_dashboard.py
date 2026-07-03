@@ -275,16 +275,29 @@ def entrenar_churn(_spark, _df):
     from pyspark.ml.feature import VectorAssembler
     from pyspark.ml.classification import RandomForestClassifier
     from pyspark.ml.evaluation import BinaryClassificationEvaluator, MulticlassClassificationEvaluator
-    from pyspark.sql.functions import col, when
+    from pyspark.sql.functions import col, when, row_number, min as smin
+    from pyspark.sql.window import Window
 
     clientes = get_clientes_df(_spark, _df)
-    umbral = clientes.approxQuantile("dias_sin_cita", [0.70], 0.01)[0]
-    clientes = clientes.withColumn("label", when(col("dias_sin_cita") > umbral, 1.0).otherwise(0.0))
+    n_total = clientes.count()
+    n_riesgo_obj = max(1, min(n_total - 1, round(n_total * 0.30)))
+    # Top 30% por inactividad, vía ranking en vez de approxQuantile: con pocos
+    # clientes (empates frecuentes en dias_sin_cita) el cuantil puede coincidir
+    # con el máximo y dejar "label" en una sola clase para todo el dataset.
+    w = Window.orderBy(col("dias_sin_cita").desc(), col("client_id"))
+    clientes = clientes.withColumn(
+        "label", when(row_number().over(w) <= n_riesgo_obj, 1.0).otherwise(0.0)
+    )
+    umbral = clientes.filter(col("label") == 1).agg(smin("dias_sin_cita")).first()[0]
 
     feats = ["total_citas", "gasto_promedio", "gasto_total",
              "tasa_cancelacion_pct", "frecuencia_mensual", "meses_activo"]
     data  = VectorAssembler(inputCols=feats, outputCol="features", handleInvalid="skip").transform(clientes)
     tr, te = data.randomSplit([0.7, 0.3], seed=42)
+    if tr.select("label").distinct().count() < 2:
+        # con pocos clientes el split aleatorio puede dejar una sola clase en
+        # entrenamiento, y el modelo resultante rompe el evaluador binario
+        tr, te = data, data
     model  = RandomForestClassifier(featuresCol="features", labelCol="label",
                                     numTrees=100, maxDepth=5, seed=42).fit(tr)
     preds  = model.transform(te)

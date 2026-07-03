@@ -18,7 +18,7 @@ reales de operación de UrbanBlade para **optimizar el negocio**: anticipar canc
 segmentar clientes, recomendar servicios, predecir demanda y proyectar ingresos.
 
 **Alcance:**
-- **Incluye:** 12,535 citas, 1,000 clientes, 25 barberos, 20 servicios (periodo dic-2024 a jun-2026).
+- **Incluye:** 12,505 citas, 1,000 clientes, 25 barberos, 20 servicios (periodo dic-2024 a jun-2026).
 - **No incluye:** datos personales sensibles más allá de nombre/nivel; información de pagos con tarjeta.
 - **Entregables:** modelos supervisados y no supervisados + dashboard de visualización.
 

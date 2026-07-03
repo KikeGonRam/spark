@@ -151,7 +151,7 @@ def _extract_records(db):
         return {
             "cliente": nombre,
             "nivel":   str(cli.get("nivel", "regular")),
-            "puntos_cliente": float(cli.get("puntos") or 0),
+            "puntos_cliente": _num(cli.get("puntos")),
             "edad_cliente":   _edad(cli.get("fecha_nacimiento")),
         }
 
@@ -168,8 +168,8 @@ def _extract_records(db):
         cli = datos_cliente(apt.get("client_id"))
 
         precio_cobrado = apt.get("precio_cobrado")
-        precio_base    = float(svc.get("precio") or 0)
-        precio         = float(precio_cobrado) if precio_cobrado is not None else precio_base
+        precio_base    = _num(svc.get("precio"))
+        precio         = _num(precio_cobrado) if precio_cobrado is not None else precio_base
 
         fdt   = _to_dt(apt.get("fecha"))
         estado = str(apt.get("estado", ""))
@@ -178,7 +178,7 @@ def _extract_records(db):
             # ── columnas originales (compatibilidad scripts 01–07) ──────────
             "servicio":     svc.get("nombre", "Desconocido"),
             "barbero":      nombre_barbero(apt.get("barber_id")),
-            "duracion_min": float(svc.get("duracion_min") or 30),
+            "duracion_min": _num(svc.get("duracion_min"), default=30.0),
             "precio":       precio,
             "estado":       estado,
             "ingreso":      precio,                     # revenue real = precio_cobrado
@@ -366,8 +366,8 @@ def get_pagos_df(spark):
         records.append({
             "servicio":     svc.get("nombre", "Desconocido"),
             "barbero":      _resolve_barbero(barbers_map.get(str(apt.get("barber_id", "")), {}), users_map),
-            "monto":        float(p.get("monto") or 0),
-            "propina":      float(p.get("propina") or 0),
+            "monto":        _num(p.get("monto")),
+            "propina":      _num(p.get("propina")),
             "metodo_pago":  str(p.get("metodo_pago", "efectivo")),
             "procesado_por": users_map.get(str(p.get("created_by", "")), {}).get("name", "Desconocido"),
             "estado_cita":  str(apt.get("estado", "")),
@@ -401,7 +401,7 @@ def get_loyalty_df(spark):
             "cliente":  users_map.get(uid, {}).get("name", "Cliente"),
             "nivel":    str(cli.get("nivel", "regular")),
             "tipo":     str(t.get("tipo", "ganado")),
-            "puntos":   float(t.get("puntos") or 0),
+            "puntos":   _num(t.get("puntos")),
             "mes":      fdt.month if fdt else 0,
             "anio":     fdt.year if fdt else 0,
         })

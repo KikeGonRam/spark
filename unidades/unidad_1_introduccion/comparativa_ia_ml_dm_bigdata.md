@@ -31,7 +31,7 @@ ML los **algoritmos que aprenden**, e IA el **paraguas conceptual**.
 | Entrada | Reglas + datos | Datos etiquetados/no | Datos históricos | Datos masivos (3V) |
 | Salida | Decisiones/acciones | Modelo predictivo | Patrones/reglas | Datos procesados |
 | Requiere aprendizaje | No siempre | **Sí (central)** | A veces | No |
-| Ejemplo en UrbanBlade | Recomendador de servicios | Predecir cancelaciones | Reglas "corte → barba" | 12,535 citas en Spark |
+| Ejemplo en UrbanBlade | Recomendador de servicios | Predecir cancelaciones | Reglas "corte → barba" | 12,505 citas en Spark |
 
 ---
 
@@ -62,7 +62,7 @@ ML los **algoritmos que aprenden**, e IA el **paraguas conceptual**.
 | ML supervisado | Regresión de facturación diaria | III |
 | ML no supervisado | Segmentación de clientes (KMeans RFM) | IV |
 | Data Mining | Recomendación de servicios (FP-Growth) | IV |
-| Big Data | Procesamiento de 12,535 citas con Spark | II |
+| Big Data | Procesamiento de 12,505 citas con Spark | II |
 
 ---
 

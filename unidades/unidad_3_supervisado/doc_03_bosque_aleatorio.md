@@ -15,7 +15,7 @@ Label:
 categoria = es_cancelada   (1 = cancelada, 0 = resto)
 ```
 
-Split: 70/30. Datos: **12,535 citas reales**.
+Split: 70/30. Datos: **12,505 citas reales**.
 
 ---
 
