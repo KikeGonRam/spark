@@ -1,7 +1,7 @@
 # Script 09: Predicción de Abandono de Clientes (Churn)
 
 **Script**: `ml_algorithms/09_prediccion_abandono.py`
-**Datos**: `barber_db` (MongoDB Atlas) — **12,535 citas, 1000 clientes reales**
+**Datos**: `barber_db` (MongoDB Atlas) — **12,505 citas, 1000 clientes reales**
 **Capa de datos**: `get_clientes_df()` (RFM por cliente) desde el conector único
 
 ---

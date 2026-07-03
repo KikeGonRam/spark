@@ -6,7 +6,7 @@
 **Equipo:** Equipo UrbanBlade · **Docente:** MGTI. Héctor Velázquez Estrada
 
 Proyecto de extracción del conocimiento sobre **UrbanBlade** (sistema de barbería,
-MongoDB `barber_db`: 12,535 citas · 1,000 clientes · 25 barberos · 20 servicios).
+MongoDB `barber_db`: 12,505 citas · 1,000 clientes · 25 barberos · 20 servicios).
 
 ---
 
@@ -19,8 +19,13 @@ MongoDB `barber_db`: 12,535 citas · 1,000 clientes · 25 barberos · 20 servici
 | **III** | Análisis supervisado | 11–12 | 03-jul-2026 | [`unidad_3_supervisado/`](unidad_3_supervisado/) |
 | **IV** | Análisis no supervisado | 13–14 | 31-jul-2026 | [`unidad_4_no_supervisado/`](unidad_4_no_supervisado/) |
 | **V** | Presentación y visualización | 15–17 | 17-ago-2026 | [`unidad_5_visualizacion/`](unidad_5_visualizacion/) |
+| **VI** | Caso aplicado: diagnóstico y gobernanza de datos (extra, fuera del programa) | — | — | [`unidad_6_caso_aplicado_laravel/`](unidad_6_caso_aplicado_laravel/) |
 
 Cada carpeta tiene su propio `README.md` con el checklist de entregables del documento.
+La Unidad VI no forma parte de la secuencia didáctica oficial (que define I–V); documenta
+un incidente real de pérdida de datos/roles en el backend Laravel que comparte la misma
+base de datos, y cómo se diagnosticó y resolvió con las mismas técnicas de consulta y
+verificación usadas en las Unidades II–IV.
 
 ---
 
@@ -48,6 +53,13 @@ Cada carpeta tiene su propio `README.md` con el checklist de entregables del doc
 ### Unidad V (visualización)
 - [x] Dashboard con gráficas personalizadas + interpretación (15 análisis en 1 app)
 - [x] Código fuente de gráficas (Matplotlib)
+
+### Unidad VI (caso aplicado, extra)
+- [x] Diagnóstico completo de un incidente real (roles + pérdida de datos)
+- [x] Análisis de causa raíz técnica (Spatie Permission + MongoDB)
+- [x] Recuperación de datos documentada y verificada end-to-end
+- [x] Limpieza de deuda técnica (seeders legado, documentación obsoleta)
+- [x] Script de onboarding para prevenir recurrencia
 
 ---
 

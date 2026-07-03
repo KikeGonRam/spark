@@ -92,11 +92,24 @@ e inventario. Ver [`unidades/unidad_2_preparacion/README.md`](unidades/unidad_2_
 
 ---
 
+## Clonar y configurar desde cero
+
+Para integrantes nuevos del equipo, en Windows con PowerShell:
+
+```powershell
+.\setup-spark.ps1
+```
+
+Instala/valida automáticamente: WSL2 + Ubuntu, Java (OpenJDK 11), Miniconda, el entorno
+`spark_env` con Python 3.11, y todas las dependencias de `requirements.txt`. Si no existe
+un archivo `.env`, el script se detiene y explica cómo obtenerlo (no genera uno falso).
+
 ## Cómo ejecutar
 
 ```bash
-# 1. Entrar al entorno (WSL)
-wsl -d Ubuntu && cd ~/spark && conda activate spark_env
+# 1. Entrar al entorno (WSL) — usa la ruta montada de Windows, NO ~/spark
+#    (~/spark es una copia nativa de WSL desactualizada, sin la carpeta unidades/)
+wsl -d Ubuntu && cd /mnt/c/Users/<tu_usuario>/Documents/UrbanBlade/spark && conda activate spark_env
 
 # 2. Ejemplos por unidad
 spark-submit unidades/unidad_2_preparacion/05_etl.py                 # ETL → data warehouse

@@ -57,12 +57,25 @@ donde añadir más clusters ya no reduce significativamente el WCSS → elige el
 
 ---
 
-## 5. Resultados esperados
+## 5. Resultados reales (KMeans, ejecución sobre 12,505 citas)
 
-- **Segmentación:** 4 segmentos automáticos (VIP, Alto consumo, Frecuente, Inactivo)
-  etiquetados por gasto y recencia, con nombres de cliente reales.
-- **PCA:** 2 componentes que explican un alto % de la varianza → clusters visualizables.
-- **Recomendación:** reglas accionables para upsell (pop-up "también te puede interesar").
+**Silhouette Score: 0.7430** → buena segmentación, confirmada por el Método del Codo
+(codo claro en K=3: WCSS cae de 152M en k=2 a 51.5M en k=3, y luego de forma mucho más
+gradual). Detalle completo en
+[`doc_01_kmeans.md`](doc_01_kmeans.md).
+
+| Cluster | Perfil | Duración | Precio | Citas | % |
+|---|---|---|---|---|---|
+| 0 | Estándar | 42.9 min | $382 | 7,545 | 60.3% |
+| 1 | Premium | 75.0 min | $820 | 602 | 4.8% |
+| 2 | Básico | 24.3 min | $248 | 4,358 | 34.9% |
+
+**Segmentación de clientes, Recomendación (FP-Growth) y PCA:** se ejecutan sobre las
+mismas 12,505 citas y 1,000 clientes; sus resultados exactos (segmentos VIP/Frecuente/
+Inactivo, reglas de asociación, varianza explicada) se generan en tiempo de ejecución —
+correr `03_segmentacion_clientes.py`, `04_recomendacion_servicios.py` y `02_pca.py` para
+obtener las cifras vigentes antes de una presentación, ya que dependen de asignaciones
+aleatorias de KMeans (semilla fija, pero sensibles a cambios en el volumen de datos).
 
 ---
 

@@ -13,7 +13,7 @@
 | Fuente | Tipo | Descripción |
 |---|---|---|
 | MongoDB `barber_db` | **Semi-estructurado** (documentos BSON) | Fuente operacional (OLTP) del sistema Laravel |
-| Colección `appointments` | Semi-estructurado | 12,535 citas (hechos) |
+| Colección `appointments` | Semi-estructurado | 12,505 citas (hechos) |
 | Colecciones `services/barbers/users/clients` | Semi-estructurado | Catálogos (dimensiones) |
 | Salida ETL `data/etl_output/` | **Estructurado** (Parquet/CSV) | Data warehouse analítico (OLAP) |
 
@@ -56,6 +56,73 @@ Grano: **una fila por cita**. Medidas: `precio`, `ingreso`, `duracion_min`, `es_
 | DIM_SERVICIO | servicio, categoria, duracion_min | `services` |
 | DIM_BARBERO | barbero | `barbers → users.name` |
 | DIM_CLIENTE | cliente, nivel, puntos, edad | `clients → users.name` |
+
+---
+
+## 2.1 Extensión del modelo — hechos y dimensiones de las 5 colecciones adicionales
+
+La Unidad II original solo modelaba `appointments` (+ sus 3 dimensiones). Los scripts
+08–11 incorporan 5 colecciones más de `barber_db`, que se modelan como **dos tablas de
+hechos adicionales** y **una dimensión nueva**, conectadas a las dimensiones ya
+existentes (mismo `DIM_TIEMPO`, `DIM_BARBERO`, `DIM_CLIENTE`):
+
+```
+                    ┌────────────────────┐
+                    │   DIM_TIEMPO       │  (compartida con HECHOS_CITAS)
+                    └─────────┬──────────┘
+                              │
+ ┌──────────────┐   ┌─────────┴──────────┐   ┌──────────────────┐
+ │ DIM_CLIENTE  │   │   HECHOS_PAGOS     │   │ DIM_PROCESADOR   │
+ │ (compartida) ├───┤  (grano = 1 pago)  ├───┤ (users, quién     │
+ │              │   │  monto, propina    │   │  procesó el pago) │
+ └──────────────┘   └────────────────────┘   └──────────────────┘
+
+ ┌──────────────┐   ┌────────────────────┐
+ │ DIM_CLIENTE  │   │ HECHOS_FIDELIZACION│
+ │ (compartida) ├───┤ (grano = 1 trans.) │
+ │              │   │  puntos, tipo      │
+ └──────────────┘   └────────────────────┘
+
+ ┌──────────────┐   ┌────────────────────┐
+ │ DIM_BARBERO  │   │  DIM_HORARIO       │
+ │ (compartida) ├───┤  dia_semana,       │
+ │              │   │  horas_disponibles │
+ └──────────────┘   └────────────────────┘
+
+ ┌──────────────────────────────────────┐
+ │        DIM_PRODUCTO (independiente)  │
+ │  producto, categoria, tipo, stock,   │
+ │  precio_compra, precio_venta         │
+ └──────────────────────────────────────┘
+```
+
+### Tabla de HECHOS (`HECHOS_PAGOS`)
+Grano: **una fila por pago**. Medidas: `monto`, `propina`.
+Colección origen: `payments` (11,029 documentos). Se une a `appointments` por
+`appointment_id` para heredar `DIM_TIEMPO`/`DIM_CLIENTE`/`DIM_BARBERO`, y a `users` por
+`created_by` para resolver quién procesó el cobro (`get_pagos_df()` en el conector).
+
+### Tabla de HECHOS (`HECHOS_FIDELIZACION`)
+Grano: **una fila por transacción de puntos**. Medida: `puntos`. Atributo: `tipo`
+(`ganado`/`canjeado`). Colección origen: `loyalty_transactions` (11,029 documentos),
+unida a `DIM_CLIENTE` por `client_id`.
+
+### Dimensión nueva: `DIM_HORARIO`
+Atributos: `dia_semana` (convertido de convención Laravel 0=Domingo a ISO 1=Lunes),
+`horas_disponibles`, `is_working`. Colección origen: `barber_schedules` (175 = 25
+barberos × 7 días). Se cruza contra `HECHOS_CITAS` (agregadas por barbero/día) para
+calcular la tasa de utilización real — ver `10_utilizacion_barberos.py`.
+
+### Dimensión independiente: `DIM_PRODUCTO`
+Atributos: `producto`, `categoria`, `tipo` (`insumo_trabajo`/`venta_cliente`),
+`precio_compra`, `precio_venta`, `stock_actual`, `stock_minimo`. Colección origen:
+`products` (31 documentos). No tiene tabla de hechos propia en el modelo actual porque
+`inventory_movements` (el registro de consumo que la conectaría con `HECHOS_CITAS`)
+está vacía en la base real — limitación documentada en `11_inventario_productos.py`.
+
+> **Nota de tipos:** `products.precio_compra` y `precio_venta` llegan como BSON
+> `Decimal128`, no como `float` nativo — requieren el helper `_num()` del conector para
+> convertirse correctamente (`float()` directo falla). Ver `SKILL.md` para el detalle.
 
 ---
 
