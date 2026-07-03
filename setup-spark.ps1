@@ -131,16 +131,19 @@ Write-Ok "Entorno '$CondaEnv' listo con todas las dependencias"
 # ── 6. Verificar archivo .env ───────────────────────────────────────────────────
 Write-Step "Verificando archivo .env"
 
-$envFile = Join-Path $fullPath ".env"
+$envFile        = Join-Path $fullPath ".env"
+$envExampleFile = Join-Path $fullPath ".env.example"
 if (-not (Test-Path $envFile)) {
     Write-Host ""
     Write-Host "    No existe un archivo .env en este proyecto." -ForegroundColor Yellow
-    Write-Host "    1. Pide el archivo .env al responsable del proyecto (credenciales" -ForegroundColor Yellow
-    Write-Host "       reales de MongoDB Atlas, no debe subirse a git)." -ForegroundColor Yellow
-    Write-Host "    2. Colócalo en: $envFile" -ForegroundColor Yellow
-    Write-Host "    3. Vuelve a ejecutar este script para validar la conexión." -ForegroundColor Yellow
+    Write-Host "    1. Copia la plantilla:  cp .env.example .env   (dentro de .\$TargetDir)" -ForegroundColor Yellow
+    Write-Host "    2. Pide al responsable del proyecto los valores reales de:" -ForegroundColor Yellow
+    Write-Host "       MONGO_USER, MONGO_PASSWORD, MONGO_CLUSTER, MONGO_DB" -ForegroundColor Yellow
+    Write-Host "       (credenciales de MongoDB Atlas — nunca se suben a git)." -ForegroundColor Yellow
+    Write-Host "    3. Llena esos valores en: $envFile" -ForegroundColor Yellow
+    Write-Host "    4. Vuelve a ejecutar este script para validar la conexión." -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "    Variables esperadas: MONGO_USER, MONGO_PASSWORD, MONGO_CLUSTER, MONGO_DB" -ForegroundColor DarkGray
+    Write-Host "    Plantilla de referencia: $envExampleFile" -ForegroundColor DarkGray
     exit 1
 }
 Write-Ok "Archivo .env encontrado"

@@ -1,6 +1,6 @@
 # Unidad II — Sesión 10: Proceso ETL Completo
 
-**Script**: `unidad2/05_etl.py`  
+**Script**: `unidades/unidad_2_preparacion/05_etl.py`  
 **Fecha de ejecución**: 2026-06-10  
 **Dataset**: 4 colecciones de `barber_db` (MongoDB Atlas)
 
@@ -34,7 +34,7 @@ ETL = Extract → Transform → Load
 
 ```
 Conectando a MongoDB Atlas...
-  Host:          server.qiot9hi.mongodb.net
+  Host:          <tu_cluster>.mongodb.net   (ver .env — nunca hardcodear ni compartir)
   Base de datos: barber_db
 
 Extrayendo colecciones...
@@ -142,7 +142,7 @@ Tiempo de transformación: 16.27s
 ### 3.1 Parquet — Formato columnar comprimido
 
 ```
-Ruta: ~/spark/data/etl_output/citas_etl.parquet
+Ruta: data/etl_output/citas_etl.parquet
 Tiempo: 3.63s
 ```
 
@@ -155,7 +155,7 @@ Tiempo: 3.63s
 ### 3.2 CSV — Legible por humanos
 
 ```
-Ruta: ~/spark/data/etl_output/citas_etl.csv
+Ruta: data/etl_output/citas_etl.csv
 Tiempo: 3.01s
 ```
 
