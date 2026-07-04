@@ -420,6 +420,12 @@ with st.sidebar:
     st.markdown("**Filtros**")
     k_clusters = st.slider("Clusters KMeans (K)", 2, 8, 3)
     st.divider()
+    # cache_resource nunca expira solo: si la BD cambió (nuevas citas, reseed),
+    # el dashboard seguiría mostrando datos viejos hasta reiniciar el proceso.
+    if st.button("Actualizar datos", use_container_width=True,
+                 help="Limpia la caché y recarga todo desde MongoDB Atlas"):
+        st.cache_resource.clear()
+        st.rerun()
     st.caption("MongoDB Atlas → barber_db")
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -441,9 +447,24 @@ st.divider()
 c1, c2, c3, c4, c5, c6 = st.columns(6)
 canceladas   = pdf["es_cancelada"].sum() if "es_cancelada" in pdf else (pdf["estado"] == "cancelada").sum()
 ingreso_real = pdf.loc[pdf["estado"] != "cancelada", "ingreso"].sum()
-c1.metric("Total Citas",       f"{len(pdf):,}")
+
+# Delta del último mes con datos vs el mes anterior — responde de inmediato
+# la pregunta "¿y eso subió o bajó?" sin abrir la pestaña de Demanda.
+_delta_citas = _delta_ingreso = None
+if {"anio", "mes"}.issubset(pdf.columns) and (pdf["anio"] > 0).any():
+    _mensual = (pdf[pdf["anio"] > 0]
+                .assign(_ing=lambda d: d["ingreso"].where(d["estado"] != "cancelada", 0.0))
+                .groupby(["anio", "mes"])
+                .agg(citas=("ingreso", "size"), ingreso=("_ing", "sum"))
+                .sort_index())
+    if len(_mensual) >= 2:
+        _ult, _prev = _mensual.iloc[-1], _mensual.iloc[-2]
+        _delta_citas   = f"{int(_ult['citas'] - _prev['citas']):+,} vs mes anterior"
+        _delta_ingreso = f"{_ult['ingreso'] - _prev['ingreso']:+,.0f} vs mes anterior"
+
+c1.metric("Total Citas",       f"{len(pdf):,}", delta=_delta_citas)
 c2.metric("Clientes Únicos",   f"{pdf['cliente'].nunique():,}")
-c3.metric("Ingreso Real",      f"${ingreso_real:,.0f}", help="Excluye citas canceladas")
+c3.metric("Ingreso Real",      f"${ingreso_real:,.0f}", delta=_delta_ingreso, help="Excluye citas canceladas")
 c4.metric("Ticket Promedio",   f"${pdf['ingreso'].mean():,.0f}")
 c5.metric("Tasa Cancelación",  f"{canceladas/len(pdf)*100:.1f}%")
 c6.metric("Barberos",          pdf["barbero"].nunique())
