@@ -418,6 +418,12 @@ with st.sidebar:
     st.markdown("**Período:** Mayo–Agosto 2026")
     st.divider()
     st.markdown("**Filtros**")
+    unidad_sel = st.radio(
+        "Unidad",
+        ["Todas las unidades", "Unidad II — Preparación",
+         "Unidad III — Supervisado", "Unidad IV — No supervisado"],
+        help="Filtra qué pestañas se muestran — útil para exponer una unidad a la vez",
+    )
     k_clusters = st.slider("Clusters KMeans (K)", 2, 8, 3)
     st.divider()
     # cache_resource nunca expira solo: si la BD cambió (nuevas citas, reseed),
@@ -474,836 +480,845 @@ st.divider()
 # ─────────────────────────────────────────────────────────────────────────────
 # TABS
 # ─────────────────────────────────────────────────────────────────────────────
-tabs = st.tabs([
-    "Resumen Ejecutivo",
-    "MapReduce / ETL",
-    "Pagos y Calidad",
-    "Fidelizacion",
-    "Utilizacion Barberos",
-    "Inventario",
-    "Regresion",
-    "Arbol de Decision",
-    "Random Forest",
-    "Churn / Abandono",
-    "Demanda",
-    "KMeans",
-    "PCA",
-    "Segmentacion Clientes",
-    "Recomendacion",
-])
+# Grupos de pestañas por unidad — el selector del sidebar filtra cuáles se
+# muestran (15 pestañas a la vez desbordan la barra en una exposición).
+# 'Resumen Ejecutivo' se incluye en todos los grupos como ancla.
+_TAB_GROUPS = {
+    "Todas las unidades": ['Resumen Ejecutivo', 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario', 'Regresion', 'Arbol de Decision', 'Random Forest', 'Churn / Abandono', 'Demanda', 'KMeans', 'PCA', 'Segmentacion Clientes', 'Recomendacion'],
+    "Unidad II — Preparación": ['Resumen Ejecutivo', 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario'],
+    "Unidad III — Supervisado": ['Resumen Ejecutivo', 'Regresion', 'Arbol de Decision', 'Random Forest', 'Churn / Abandono', 'Demanda'],
+    "Unidad IV — No supervisado": ['Resumen Ejecutivo', 'KMeans', 'PCA', 'Segmentacion Clientes', 'Recomendacion'],
+}
+_visible = _TAB_GROUPS[unidad_sel]
+tabs = st.tabs(_visible)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — RESUMEN GENERAL
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[0]:
-    st.subheader("Resumen Ejecutivo del Negocio")
+if "Resumen Ejecutivo" in _visible:
+    with tabs[_visible.index("Resumen Ejecutivo")]:
+        st.subheader("Resumen Ejecutivo del Negocio")
 
-    col_a, col_b = st.columns(2)
+        col_a, col_b = st.columns(2)
 
-    with col_a:
-        # Distribución de estados
-        estados = pdf["estado"].value_counts().reset_index()
-        estados.columns = ["estado", "count"]
-        fig = px.pie(estados, values="count", names="estado",
-                     title="Distribución de Estados de Citas",
-                     color_discrete_sequence=px.colors.qualitative.Set3,
-                     hole=0.4)
-        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                          font_color="white", legend_font_color="white")
-        st.plotly_chart(fig, use_container_width=True)
+        with col_a:
+            # Distribución de estados
+            estados = pdf["estado"].value_counts().reset_index()
+            estados.columns = ["estado", "count"]
+            fig = px.pie(estados, values="count", names="estado",
+                         title="Distribución de Estados de Citas",
+                         color_discrete_sequence=px.colors.qualitative.Set3,
+                         hole=0.4)
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              font_color="white", legend_font_color="white")
+            st.plotly_chart(fig, use_container_width=True)
 
-    with col_b:
-        # Top barberos por citas
-        top_barberos = pdf.groupby("barbero").size().reset_index(name="citas").sort_values("citas", ascending=False).head(10)
-        fig2 = px.bar(top_barberos, x="citas", y="barbero", orientation="h",
-                      title="Top 10 Barberos por Número de Citas",
-                      color="citas", color_continuous_scale=[[0, "#444"], [1, GOLD]])
-        fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                           font_color="white", yaxis=dict(autorange="reversed"),
-                           coloraxis_showscale=False)
-        st.plotly_chart(fig2, use_container_width=True)
+        with col_b:
+            # Top barberos por citas
+            top_barberos = pdf.groupby("barbero").size().reset_index(name="citas").sort_values("citas", ascending=False).head(10)
+            fig2 = px.bar(top_barberos, x="citas", y="barbero", orientation="h",
+                          title="Top 10 Barberos por Número de Citas",
+                          color="citas", color_continuous_scale=[[0, "#444"], [1, GOLD]])
+            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", yaxis=dict(autorange="reversed"),
+                               coloraxis_showscale=False)
+            st.plotly_chart(fig2, use_container_width=True)
 
-    col_c, col_d = st.columns(2)
+        col_c, col_d = st.columns(2)
 
-    with col_c:
-        # Ingresos por servicio
-        por_svc = pdf.groupby("servicio")["ingreso"].sum().reset_index().sort_values("ingreso", ascending=False)
-        fig3 = px.bar(por_svc, x="servicio", y="ingreso",
-                      title="Ingreso Total por Tipo de Servicio",
-                      color="ingreso", color_continuous_scale=[[0, "#444"], [1, GOLD]],
-                      labels={"ingreso": "Ingreso ($MXN)", "servicio": "Servicio"})
-        fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                           font_color="white", coloraxis_showscale=False, xaxis_tickangle=-30)
-        st.plotly_chart(fig3, use_container_width=True)
+        with col_c:
+            # Ingresos por servicio
+            por_svc = pdf.groupby("servicio")["ingreso"].sum().reset_index().sort_values("ingreso", ascending=False)
+            fig3 = px.bar(por_svc, x="servicio", y="ingreso",
+                          title="Ingreso Total por Tipo de Servicio",
+                          color="ingreso", color_continuous_scale=[[0, "#444"], [1, GOLD]],
+                          labels={"ingreso": "Ingreso ($MXN)", "servicio": "Servicio"})
+            fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", coloraxis_showscale=False, xaxis_tickangle=-30)
+            st.plotly_chart(fig3, use_container_width=True)
 
-    with col_d:
-        # Histograma de precios
-        fig4 = px.histogram(pdf, x="precio", nbins=30,
-                            title="Distribución de Precios de Citas",
-                            color_discrete_sequence=[GOLD],
-                            labels={"precio": "Precio ($MXN)", "count": "Frecuencia"})
-        fig4.add_vline(x=pdf["precio"].mean(), line_dash="dash", line_color=RED,
-                       annotation_text=f"Media: ${pdf['precio'].mean():.0f}", annotation_font_color="white")
-        fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
-        st.plotly_chart(fig4, use_container_width=True)
+        with col_d:
+            # Histograma de precios
+            fig4 = px.histogram(pdf, x="precio", nbins=30,
+                                title="Distribución de Precios de Citas",
+                                color_discrete_sequence=[GOLD],
+                                labels={"precio": "Precio ($MXN)", "count": "Frecuencia"})
+            fig4.add_vline(x=pdf["precio"].mean(), line_dash="dash", line_color=RED,
+                           annotation_text=f"Media: ${pdf['precio'].mean():.0f}", annotation_font_color="white")
+            fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig4, use_container_width=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 2 — MAPREDUCE
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[1]:
-    st.subheader("Unidad II — MapReduce / ETL Distribuido")
-    st.caption("MAP → agrupa | REDUCE → agrega métricas por servicio y barbero")
+if "MapReduce / ETL" in _visible:
+    with tabs[_visible.index("MapReduce / ETL")]:
+        st.subheader("Unidad II — MapReduce / ETL Distribuido")
+        st.caption("MAP → agrupa | REDUCE → agrega métricas por servicio y barbero")
 
-    resumen = pdf.groupby("servicio").agg(
-        ingreso_total=("ingreso", "sum"),
-        citas=("ingreso", "count"),
-        precio_promedio=("precio", "mean"),
-        duracion_promedio=("duracion_min", "mean"),
-    ).reset_index().sort_values("ingreso_total", ascending=False)
+        resumen = pdf.groupby("servicio").agg(
+            ingreso_total=("ingreso", "sum"),
+            citas=("ingreso", "count"),
+            precio_promedio=("precio", "mean"),
+            duracion_promedio=("duracion_min", "mean"),
+        ).reset_index().sort_values("ingreso_total", ascending=False)
 
-    col1, col2 = st.columns(2)
+        col1, col2 = st.columns(2)
 
-    with col1:
-        fig = px.bar(resumen, x="servicio", y="ingreso_total",
-                     title="REDUCE → Ingreso Total por Servicio",
-                     color="ingreso_total", color_continuous_scale=[[0, "#333"], [1, GOLD]],
-                     labels={"ingreso_total": "Ingreso Total ($MXN)", "servicio": ""})
-        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                          font_color="white", coloraxis_showscale=False, xaxis_tickangle=-30)
-        st.plotly_chart(fig, use_container_width=True)
+        with col1:
+            fig = px.bar(resumen, x="servicio", y="ingreso_total",
+                         title="REDUCE → Ingreso Total por Servicio",
+                         color="ingreso_total", color_continuous_scale=[[0, "#333"], [1, GOLD]],
+                         labels={"ingreso_total": "Ingreso Total ($MXN)", "servicio": ""})
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              font_color="white", coloraxis_showscale=False, xaxis_tickangle=-30)
+            st.plotly_chart(fig, use_container_width=True)
 
-    with col2:
-        fig2 = px.bar(resumen.sort_values("citas", ascending=False), x="servicio", y="citas",
-                      title="REDUCE → Número de Citas por Servicio",
-                      color="citas", color_continuous_scale=[[0, "#333"], [1, BLUE]],
-                      labels={"citas": "Número de Citas", "servicio": ""})
-        fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                           font_color="white", coloraxis_showscale=False, xaxis_tickangle=-30)
-        st.plotly_chart(fig2, use_container_width=True)
+        with col2:
+            fig2 = px.bar(resumen.sort_values("citas", ascending=False), x="servicio", y="citas",
+                          title="REDUCE → Número de Citas por Servicio",
+                          color="citas", color_continuous_scale=[[0, "#333"], [1, BLUE]],
+                          labels={"citas": "Número de Citas", "servicio": ""})
+            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", coloraxis_showscale=False, xaxis_tickangle=-30)
+            st.plotly_chart(fig2, use_container_width=True)
 
-    col3, col4 = st.columns(2)
+        col3, col4 = st.columns(2)
 
-    with col3:
-        fig3 = px.scatter(resumen, x="citas", y="ingreso_total", size="precio_promedio",
-                          text="servicio", title="Citas vs Ingreso Total (tamaño = precio promedio)",
-                          color="ingreso_total", color_continuous_scale=[[0, "#333"], [1, GOLD]])
-        fig3.update_traces(textposition="top center", textfont_color="white")
-        fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                           font_color="white", coloraxis_showscale=False)
-        st.plotly_chart(fig3, use_container_width=True)
+        with col3:
+            fig3 = px.scatter(resumen, x="citas", y="ingreso_total", size="precio_promedio",
+                              text="servicio", title="Citas vs Ingreso Total (tamaño = precio promedio)",
+                              color="ingreso_total", color_continuous_scale=[[0, "#333"], [1, GOLD]])
+            fig3.update_traces(textposition="top center", textfont_color="white")
+            fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", coloraxis_showscale=False)
+            st.plotly_chart(fig3, use_container_width=True)
 
-    with col4:
-        # Ingreso por barbero
-        por_barbero = pdf.groupby("barbero")["ingreso"].sum().reset_index().sort_values("ingreso", ascending=False).head(12)
-        fig4 = px.bar(por_barbero, x="ingreso", y="barbero", orientation="h",
-                      title="Ingreso Total por Barbero (Top 12)",
-                      color="ingreso", color_continuous_scale=[[0, "#333"], [1, PURPLE]])
-        fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                           font_color="white", yaxis=dict(autorange="reversed"), coloraxis_showscale=False)
-        st.plotly_chart(fig4, use_container_width=True)
+        with col4:
+            # Ingreso por barbero
+            por_barbero = pdf.groupby("barbero")["ingreso"].sum().reset_index().sort_values("ingreso", ascending=False).head(12)
+            fig4 = px.bar(por_barbero, x="ingreso", y="barbero", orientation="h",
+                          title="Ingreso Total por Barbero (Top 12)",
+                          color="ingreso", color_continuous_scale=[[0, "#333"], [1, PURPLE]])
+            fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", yaxis=dict(autorange="reversed"), coloraxis_showscale=False)
+            st.plotly_chart(fig4, use_container_width=True)
 
-    st.subheader("Tabla MapReduce — Resumen por Servicio")
-    resumen_display = resumen.copy()
-    resumen_display["ingreso_total"]     = resumen_display["ingreso_total"].apply(lambda x: f"${x:,.2f}")
-    resumen_display["precio_promedio"]   = resumen_display["precio_promedio"].apply(lambda x: f"${x:,.2f}")
-    resumen_display["duracion_promedio"] = resumen_display["duracion_promedio"].apply(lambda x: f"{x:.1f} min")
-    resumen_display.columns = ["Servicio", "Ingreso Total", "Núm. Citas", "Precio Promedio", "Duración Promedio"]
-    st.dataframe(resumen_display, use_container_width=True, hide_index=True)
+        st.subheader("Tabla MapReduce — Resumen por Servicio")
+        resumen_display = resumen.copy()
+        resumen_display["ingreso_total"]     = resumen_display["ingreso_total"].apply(lambda x: f"${x:,.2f}")
+        resumen_display["precio_promedio"]   = resumen_display["precio_promedio"].apply(lambda x: f"${x:,.2f}")
+        resumen_display["duracion_promedio"] = resumen_display["duracion_promedio"].apply(lambda x: f"{x:.1f} min")
+        resumen_display.columns = ["Servicio", "Ingreso Total", "Núm. Citas", "Precio Promedio", "Duración Promedio"]
+        st.dataframe(resumen_display, use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 3 — PAGOS Y CALIDAD DE DATOS
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[2]:
-    st.subheader("Unidad II — Pagos y Calidad de Datos")
-    st.caption("Colección `payments` (11,016 docs) — reconciliación de cobros y métodos de pago")
+if "Pagos y Calidad" in _visible:
+    with tabs[_visible.index("Pagos y Calidad")]:
+        st.subheader("Unidad II — Pagos y Calidad de Datos")
+        st.caption("Colección `payments` (11,016 docs) — reconciliación de cobros y métodos de pago")
 
-    pagos_pdf = analizar_pagos(spark)
-    if pagos_pdf is None or pagos_pdf.empty:
-        st.warning("Sin datos de pagos disponibles.")
-    else:
-        n_metodos = pagos_pdf["metodo_pago"].nunique()
-        n_procesadores = pagos_pdf["procesado_por"].nunique()
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Pagos registrados", f"{len(pagos_pdf):,}")
-        c2.metric("Propina total", f"${pagos_pdf['propina'].sum():,.0f}")
-        c3.metric("Métodos de pago", n_metodos)
-        c4.metric("Procesadores distintos", n_procesadores)
+        pagos_pdf = analizar_pagos(spark)
+        if pagos_pdf is None or pagos_pdf.empty:
+            st.warning("Sin datos de pagos disponibles.")
+        else:
+            n_metodos = pagos_pdf["metodo_pago"].nunique()
+            n_procesadores = pagos_pdf["procesado_por"].nunique()
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Pagos registrados", f"{len(pagos_pdf):,}")
+            c2.metric("Propina total", f"${pagos_pdf['propina'].sum():,.0f}")
+            c3.metric("Métodos de pago", n_metodos)
+            c4.metric("Procesadores distintos", n_procesadores)
 
-        col_a, col_b = st.columns(2)
-        with col_a:
-            metodos = pagos_pdf["metodo_pago"].value_counts().reset_index()
-            metodos.columns = ["metodo", "pagos"]
-            fig = px.pie(metodos, values="pagos", names="metodo", hole=0.45,
-                         title="Distribución por método de pago",
-                         color_discrete_sequence=px.colors.qualitative.Set2)
-            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
-            st.plotly_chart(fig, use_container_width=True)
-        with col_b:
-            top_svc = pagos_pdf.groupby("servicio")["monto"].sum().reset_index().sort_values("monto", ascending=False).head(10)
-            fig2 = px.bar(top_svc, x="monto", y="servicio", orientation="h",
-                          title="Monto cobrado por servicio (top 10)",
-                          color="monto", color_continuous_scale=[[0, "#333"], [1, GOLD]])
-            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                               font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
-            st.plotly_chart(fig2, use_container_width=True)
+            col_a, col_b = st.columns(2)
+            with col_a:
+                metodos = pagos_pdf["metodo_pago"].value_counts().reset_index()
+                metodos.columns = ["metodo", "pagos"]
+                fig = px.pie(metodos, values="pagos", names="metodo", hole=0.45,
+                             title="Distribución por método de pago",
+                             color_discrete_sequence=px.colors.qualitative.Set2)
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig, use_container_width=True)
+            with col_b:
+                top_svc = pagos_pdf.groupby("servicio")["monto"].sum().reset_index().sort_values("monto", ascending=False).head(10)
+                fig2 = px.bar(top_svc, x="monto", y="servicio", orientation="h",
+                              title="Monto cobrado por servicio (top 10)",
+                              color="monto", color_continuous_scale=[[0, "#333"], [1, GOLD]])
+                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                   font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+                st.plotly_chart(fig2, use_container_width=True)
 
-        st.info(f"**Calidad de datos:** {n_procesadores} cuenta(s) procesan el 100% de los cobros "
-                f"y se usa {n_metodos} método de pago (`{pagos_pdf['metodo_pago'].iloc[0]}`) — "
-                f"el sistema centraliza el cobro y no hay variedad de métodos digitales todavía.",
-                icon=":material/info:")
+            st.info(f"**Calidad de datos:** {n_procesadores} cuenta(s) procesan el 100% de los cobros "
+                    f"y se usa {n_metodos} método de pago (`{pagos_pdf['metodo_pago'].iloc[0]}`) — "
+                    f"el sistema centraliza el cobro y no hay variedad de métodos digitales todavía.",
+                    icon=":material/info:")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 4 — FIDELIZACIÓN
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[3]:
-    st.subheader("Unidad II — Programa de Fidelización")
-    st.caption("Colección `loyalty_transactions` (11,016 docs) — puntos ganados por cliente")
+if "Fidelizacion" in _visible:
+    with tabs[_visible.index("Fidelizacion")]:
+        st.subheader("Unidad II — Programa de Fidelización")
+        st.caption("Colección `loyalty_transactions` (11,016 docs) — puntos ganados por cliente")
 
-    loy_pdf = analizar_fidelizacion(spark)
-    if loy_pdf is None or loy_pdf.empty:
-        st.warning("Sin transacciones de lealtad disponibles.")
-    else:
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Transacciones", f"{len(loy_pdf):,}")
-        c2.metric("Puntos totales otorgados", f"{loy_pdf['puntos'].sum():,.0f}")
-        c3.metric("Clientes con puntos", loy_pdf["cliente"].nunique())
+        loy_pdf = analizar_fidelizacion(spark)
+        if loy_pdf is None or loy_pdf.empty:
+            st.warning("Sin transacciones de lealtad disponibles.")
+        else:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Transacciones", f"{len(loy_pdf):,}")
+            c2.metric("Puntos totales otorgados", f"{loy_pdf['puntos'].sum():,.0f}")
+            c3.metric("Clientes con puntos", loy_pdf["cliente"].nunique())
 
-        col_a, col_b = st.columns(2)
-        with col_a:
-            por_nivel = loy_pdf.groupby(["cliente", "nivel"])["puntos"].sum().reset_index()
-            resumen_nivel = por_nivel.groupby("nivel")["puntos"].mean().reset_index()
-            fig = px.bar(resumen_nivel, x="nivel", y="puntos",
-                         title="Puntos promedio por nivel de cliente",
-                         color="nivel", color_discrete_sequence=[BLUE, GOLD])
-            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
-            st.plotly_chart(fig, use_container_width=True)
-        with col_b:
-            top_clientes = por_nivel.sort_values("puntos", ascending=False).head(10)
-            fig2 = px.bar(top_clientes, x="puntos", y="cliente", orientation="h",
-                          title="Top 10 clientes por puntos acumulados",
-                          color="puntos", color_continuous_scale=[[0, "#333"], [1, GOLD]])
-            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                               font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
-            st.plotly_chart(fig2, use_container_width=True)
+            col_a, col_b = st.columns(2)
+            with col_a:
+                por_nivel = loy_pdf.groupby(["cliente", "nivel"])["puntos"].sum().reset_index()
+                resumen_nivel = por_nivel.groupby("nivel")["puntos"].mean().reset_index()
+                fig = px.bar(resumen_nivel, x="nivel", y="puntos",
+                             title="Puntos promedio por nivel de cliente",
+                             color="nivel", color_discrete_sequence=[BLUE, GOLD])
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig, use_container_width=True)
+            with col_b:
+                top_clientes = por_nivel.sort_values("puntos", ascending=False).head(10)
+                fig2 = px.bar(top_clientes, x="puntos", y="cliente", orientation="h",
+                              title="Top 10 clientes por puntos acumulados",
+                              color="puntos", color_continuous_scale=[[0, "#333"], [1, GOLD]])
+                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                   font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+                st.plotly_chart(fig2, use_container_width=True)
 
-        tendencia = loy_pdf[loy_pdf["anio"] > 0].groupby(["anio", "mes"])["puntos"].sum().reset_index()
-        tendencia["periodo"] = tendencia["anio"].astype(str) + "-" + tendencia["mes"].astype(str).str.zfill(2)
-        fig3 = px.line(tendencia.sort_values("periodo"), x="periodo", y="puntos", markers=True,
-                       title="Tendencia mensual de puntos otorgados")
-        fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
-        st.plotly_chart(fig3, use_container_width=True)
+            tendencia = loy_pdf[loy_pdf["anio"] > 0].groupby(["anio", "mes"])["puntos"].sum().reset_index()
+            tendencia["periodo"] = tendencia["anio"].astype(str) + "-" + tendencia["mes"].astype(str).str.zfill(2)
+            fig3 = px.line(tendencia.sort_values("periodo"), x="periodo", y="puntos", markers=True,
+                           title="Tendencia mensual de puntos otorgados")
+            fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig3, use_container_width=True)
 
-        st.info("Todas las transacciones son de tipo `ganado` — aún no hay canjes registrados. "
-                "Oportunidad: activar la redención de puntos por servicios/productos.",
-                icon=":material/info:")
+            st.info("Todas las transacciones son de tipo `ganado` — aún no hay canjes registrados. "
+                    "Oportunidad: activar la redención de puntos por servicios/productos.",
+                    icon=":material/info:")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 5 — UTILIZACIÓN DE BARBEROS
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[4]:
-    st.subheader("Unidad II — Utilización de Barberos (oferta vs demanda)")
-    st.caption("Colección `barber_schedules` (175 docs) — horas disponibles vs horas ocupadas")
+if "Utilizacion Barberos" in _visible:
+    with tabs[_visible.index("Utilizacion Barberos")]:
+        st.subheader("Unidad II — Utilización de Barberos (oferta vs demanda)")
+        st.caption("Colección `barber_schedules` (175 docs) — horas disponibles vs horas ocupadas")
 
-    horarios, util = analizar_utilizacion(pdf)
-    if util is None or util.empty:
-        st.warning("Sin datos de horarios disponibles.")
-    else:
-        ranking = (util.groupby("barbero")
-                       .agg(utilizacion_prom=("utilizacion_pct", "mean"))
-                       .round(1).reset_index().sort_values("utilizacion_prom", ascending=False))
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Barberos con agenda", horarios["barbero"].nunique())
-        c2.metric("Utilización promedio del equipo", f"{ranking['utilizacion_prom'].mean():.1f}%")
-        c3.metric("Sobrecargados (>80%)", int((ranking["utilizacion_prom"] > 80).sum()))
+        horarios, util = analizar_utilizacion(pdf)
+        if util is None or util.empty:
+            st.warning("Sin datos de horarios disponibles.")
+        else:
+            ranking = (util.groupby("barbero")
+                           .agg(utilizacion_prom=("utilizacion_pct", "mean"))
+                           .round(1).reset_index().sort_values("utilizacion_prom", ascending=False))
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Barberos con agenda", horarios["barbero"].nunique())
+            c2.metric("Utilización promedio del equipo", f"{ranking['utilizacion_prom'].mean():.1f}%")
+            c3.metric("Sobrecargados (>80%)", int((ranking["utilizacion_prom"] > 80).sum()))
 
-        col_a, col_b = st.columns(2)
-        with col_a:
-            fig = px.bar(ranking, x="utilizacion_prom", y="barbero", orientation="h",
-                         title="Utilización promedio por barbero",
-                         color="utilizacion_prom", color_continuous_scale=[[0, BLUE], [0.5, GOLD], [1, RED]])
-            fig.add_vline(x=80, line_dash="dash", line_color=RED, annotation_text="Sobrecarga")
-            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                              font_color="white", coloraxis_showscale=False,
-                              yaxis=dict(autorange="reversed"), height=600)
-            st.plotly_chart(fig, use_container_width=True)
-        with col_b:
-            util_disp = util.copy()
-            util_disp["dia_nombre"] = util_disp["dia_semana"].map(DIAS_SEMANA)
-            heat = util_disp.pivot_table(index="barbero", columns="dia_nombre",
-                                         values="utilizacion_pct", aggfunc="mean")
-            fig2 = px.imshow(heat, text_auto=".0f", color_continuous_scale=[[0, DARK], [1, GOLD]],
-                             title="Mapa de calor: utilización por barbero y día",
-                             labels=dict(color="Utilización %"))
-            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white", height=600)
-            st.plotly_chart(fig2, use_container_width=True)
+            col_a, col_b = st.columns(2)
+            with col_a:
+                fig = px.bar(ranking, x="utilizacion_prom", y="barbero", orientation="h",
+                             title="Utilización promedio por barbero",
+                             color="utilizacion_prom", color_continuous_scale=[[0, BLUE], [0.5, GOLD], [1, RED]])
+                fig.add_vline(x=80, line_dash="dash", line_color=RED, annotation_text="Sobrecarga")
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                  font_color="white", coloraxis_showscale=False,
+                                  yaxis=dict(autorange="reversed"), height=600)
+                st.plotly_chart(fig, use_container_width=True)
+            with col_b:
+                util_disp = util.copy()
+                util_disp["dia_nombre"] = util_disp["dia_semana"].map(DIAS_SEMANA)
+                heat = util_disp.pivot_table(index="barbero", columns="dia_nombre",
+                                             values="utilizacion_pct", aggfunc="mean")
+                fig2 = px.imshow(heat, text_auto=".0f", color_continuous_scale=[[0, DARK], [1, GOLD]],
+                                 title="Mapa de calor: utilización por barbero y día",
+                                 labels=dict(color="Utilización %"))
+                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white", height=600)
+                st.plotly_chart(fig2, use_container_width=True)
 
-        st.info(f"Equipo con utilización promedio de {ranking['utilizacion_prom'].mean():.1f}%. "
-                f"Redistribuir citas de barberos/días saturados hacia los de baja utilización "
-                f"optimiza la agenda sin contratar personal adicional.", icon=":material/info:")
+            st.info(f"Equipo con utilización promedio de {ranking['utilizacion_prom'].mean():.1f}%. "
+                    f"Redistribuir citas de barberos/días saturados hacia los de baja utilización "
+                    f"optimiza la agenda sin contratar personal adicional.", icon=":material/info:")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 6 — INVENTARIO
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[5]:
-    st.subheader("Unidad II — Salud del Inventario")
-    st.caption("Colección `products` (31 docs) — stock, márgenes y categorías")
+if "Inventario" in _visible:
+    with tabs[_visible.index("Inventario")]:
+        st.subheader("Unidad II — Salud del Inventario")
+        st.caption("Colección `products` (31 docs) — stock, márgenes y categorías")
 
-    productos = analizar_inventario()
-    if productos is None or productos.empty:
-        st.warning("Sin productos disponibles.")
-    else:
-        alertas = productos[productos["necesita_reorden"]]
-        venta = productos[productos["tipo"] == "venta_cliente"]
-        valor_inventario = (productos["precio_compra"] * productos["stock_actual"]).sum()
-
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Productos", len(productos))
-        c2.metric("Alertas de reorden", len(alertas))
-        c3.metric("Margen promedio (venta)", f"{venta['margen_pct'].mean():.1f}%" if len(venta) else "N/A")
-        c4.metric("Valor de inventario", f"${valor_inventario:,.0f}")
-
-        col_a, col_b = st.columns(2)
-        with col_a:
-            cat = productos["categoria"].value_counts().reset_index()
-            cat.columns = ["categoria", "productos"]
-            fig = px.bar(cat, x="productos", y="categoria", orientation="h",
-                         title="Productos por categoría",
-                         color="productos", color_continuous_scale=[[0, "#333"], [1, PURPLE]])
-            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                              font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
-            st.plotly_chart(fig, use_container_width=True)
-        with col_b:
-            fig2 = px.bar(venta.sort_values("margen_pct", ascending=False).head(10),
-                          x="margen_pct", y="producto", orientation="h",
-                          title="Top 10 productos por margen (%)",
-                          color="margen_pct", color_continuous_scale=[[0, "#333"], [1, GREEN]])
-            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                               font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
-            st.plotly_chart(fig2, use_container_width=True)
-
-        if len(alertas):
-            st.warning(f"{len(alertas)} producto(s) requieren reorden inmediato.", icon=":material/warning:")
+        productos = analizar_inventario()
+        if productos is None or productos.empty:
+            st.warning("Sin productos disponibles.")
         else:
-            st.success("Inventario saludable — sin alertas de reorden.")
+            alertas = productos[productos["necesita_reorden"]]
+            venta = productos[productos["tipo"] == "venta_cliente"]
+            valor_inventario = (productos["precio_compra"] * productos["stock_actual"]).sum()
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Productos", len(productos))
+            c2.metric("Alertas de reorden", len(alertas))
+            c3.metric("Margen promedio (venta)", f"{venta['margen_pct'].mean():.1f}%" if len(venta) else "N/A")
+            c4.metric("Valor de inventario", f"${valor_inventario:,.0f}")
+
+            col_a, col_b = st.columns(2)
+            with col_a:
+                cat = productos["categoria"].value_counts().reset_index()
+                cat.columns = ["categoria", "productos"]
+                fig = px.bar(cat, x="productos", y="categoria", orientation="h",
+                             title="Productos por categoría",
+                             color="productos", color_continuous_scale=[[0, "#333"], [1, PURPLE]])
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                  font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+                st.plotly_chart(fig, use_container_width=True)
+            with col_b:
+                fig2 = px.bar(venta.sort_values("margen_pct", ascending=False).head(10),
+                              x="margen_pct", y="producto", orientation="h",
+                              title="Top 10 productos por margen (%)",
+                              color="margen_pct", color_continuous_scale=[[0, "#333"], [1, GREEN]])
+                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                   font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+                st.plotly_chart(fig2, use_container_width=True)
+
+            if len(alertas):
+                st.warning(f"{len(alertas)} producto(s) requieren reorden inmediato.", icon=":material/warning:")
+            else:
+                st.success("Inventario saludable — sin alertas de reorden.")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 7 — REGRESIÓN
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[6]:
-    st.subheader("Unidad III — Análisis Supervisado: Regresión")
-    st.caption("Predicción de la FACTURACIÓN DIARIA (target real, sin fuga) · 6 modelos · R², MSE, MAE")
-    st.info("Se predice el ingreso **por día** a partir del volumen de citas y el calendario. "
-            "Predecir el precio de una sola cita sería trivial (precio_cobrado==precio_servicio), "
-            "por eso agregamos por día: ahí sí hay varianza real.", icon=":material/info:")
+if "Regresion" in _visible:
+    with tabs[_visible.index("Regresion")]:
+        st.subheader("Unidad III — Análisis Supervisado: Regresión")
+        st.caption("Predicción de la FACTURACIÓN DIARIA (target real, sin fuga) · 6 modelos · R², MSE, MAE")
+        st.info("Se predice el ingreso **por día** a partir del volumen de citas y el calendario. "
+                "Predecir el precio de una sola cita sería trivial (precio_cobrado==precio_servicio), "
+                "por eso agregamos por día: ahí sí hay varianza real.", icon=":material/info:")
 
-    with st.spinner("Entrenando 6 modelos de regresión sobre datos reales…"):
-        tabla_reg, pdf_scatter = entrenar_regresion(spark, df)
+        with st.spinner("Entrenando 6 modelos de regresión sobre datos reales…"):
+            tabla_reg, pdf_scatter = entrenar_regresion(spark, df)
 
-    mejor = tabla_reg.loc[tabla_reg["R²"].idxmax()]
-    peor  = tabla_reg.loc[tabla_reg["MSE"].idxmax()]
+        mejor = tabla_reg.loc[tabla_reg["R²"].idxmax()]
+        peor  = tabla_reg.loc[tabla_reg["MSE"].idxmax()]
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Mejor R²",       f"{mejor['R²']:.4f}",  delta=mejor["Modelo"])
-    c2.metric("Menor MAE",      f"${tabla_reg['MAE'].min():.2f}")
-    c3.metric("Menor MSE",      f"{tabla_reg['MSE'].min():.2f}")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Mejor R²",       f"{mejor['R²']:.4f}",  delta=mejor["Modelo"])
+        c2.metric("Menor MAE",      f"${tabla_reg['MAE'].min():.2f}")
+        c3.metric("Menor MSE",      f"{tabla_reg['MSE'].min():.2f}")
 
-    col_a, col_b = st.columns(2)
+        col_a, col_b = st.columns(2)
 
-    with col_a:
-        fig = px.bar(tabla_reg, x="Modelo", y="R²",
-                     title="Comparación R² — 6 Modelos de Regresión",
-                     color="R²", color_continuous_scale=[[0, "#333"], [1, GOLD]],
-                     text_auto=".4f")
-        fig.add_hline(y=0.9, line_dash="dot", line_color=GREEN, annotation_text="R²=0.9 excelente", annotation_font_color="white")
-        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                          font_color="white", coloraxis_showscale=False, xaxis_tickangle=-20)
-        st.plotly_chart(fig, use_container_width=True)
+        with col_a:
+            fig = px.bar(tabla_reg, x="Modelo", y="R²",
+                         title="Comparación R² — 6 Modelos de Regresión",
+                         color="R²", color_continuous_scale=[[0, "#333"], [1, GOLD]],
+                         text_auto=".4f")
+            fig.add_hline(y=0.9, line_dash="dot", line_color=GREEN, annotation_text="R²=0.9 excelente", annotation_font_color="white")
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              font_color="white", coloraxis_showscale=False, xaxis_tickangle=-20)
+            st.plotly_chart(fig, use_container_width=True)
 
-    with col_b:
-        fig2 = go.Figure()
-        fig2.add_trace(go.Bar(name="MSE", x=tabla_reg["Modelo"], y=tabla_reg["MSE"], marker_color=RED))
-        fig2.add_trace(go.Bar(name="MAE", x=tabla_reg["Modelo"], y=tabla_reg["MAE"], marker_color=BLUE))
-        fig2.update_layout(title="MSE vs MAE por Modelo",
-                           barmode="group", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                           font_color="white", xaxis_tickangle=-20)
-        st.plotly_chart(fig2, use_container_width=True)
+        with col_b:
+            fig2 = go.Figure()
+            fig2.add_trace(go.Bar(name="MSE", x=tabla_reg["Modelo"], y=tabla_reg["MSE"], marker_color=RED))
+            fig2.add_trace(go.Bar(name="MAE", x=tabla_reg["Modelo"], y=tabla_reg["MAE"], marker_color=BLUE))
+            fig2.update_layout(title="MSE vs MAE por Modelo",
+                               barmode="group", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", xaxis_tickangle=-20)
+            st.plotly_chart(fig2, use_container_width=True)
 
-    col_c, col_d = st.columns(2)
+        col_c, col_d = st.columns(2)
 
-    with col_c:
-        fig3 = px.scatter(pdf_scatter, x="num_citas", y="ingreso_dia",
-                          title="Facturación diaria real vs Predicción (Lineal Simple)",
-                          labels={"num_citas": "Citas en el día", "ingreso_dia": "Facturación del día ($MXN)"},
-                          color_discrete_sequence=[BLUE], opacity=0.5)
-        fig3.add_scatter(x=pdf_scatter["num_citas"], y=pdf_scatter["prediction"],
-                         mode="markers", name="Predicción", marker=dict(color=GOLD, symbol="x", size=6))
-        fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
-        st.plotly_chart(fig3, use_container_width=True)
+        with col_c:
+            fig3 = px.scatter(pdf_scatter, x="num_citas", y="ingreso_dia",
+                              title="Facturación diaria real vs Predicción (Lineal Simple)",
+                              labels={"num_citas": "Citas en el día", "ingreso_dia": "Facturación del día ($MXN)"},
+                              color_discrete_sequence=[BLUE], opacity=0.5)
+            fig3.add_scatter(x=pdf_scatter["num_citas"], y=pdf_scatter["prediction"],
+                             mode="markers", name="Predicción", marker=dict(color=GOLD, symbol="x", size=6))
+            fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig3, use_container_width=True)
 
-    with col_d:
-        st.subheader("Tabla Comparativa de Modelos")
-        st.dataframe(
-            tabla_reg.style.highlight_max(subset=["R²"], color="#2d4a1e")
-                           .highlight_min(subset=["MSE", "MAE"], color="#2d4a1e")
-                           .format({"R²": "{:.4f}", "MSE": "{:.2f}", "MAE": "{:.2f}"}),
-            use_container_width=True, hide_index=True
-        )
-        mejor_idx = tabla_reg["R²"].idxmax()
-        st.success(f"Mejor modelo: **{tabla_reg.loc[mejor_idx, 'Modelo']}** — R²={tabla_reg.loc[mejor_idx, 'R²']:.4f}")
+        with col_d:
+            st.subheader("Tabla Comparativa de Modelos")
+            st.dataframe(
+                tabla_reg.style.highlight_max(subset=["R²"], color="#2d4a1e")
+                               .highlight_min(subset=["MSE", "MAE"], color="#2d4a1e")
+                               .format({"R²": "{:.4f}", "MSE": "{:.2f}", "MAE": "{:.2f}"}),
+                use_container_width=True, hide_index=True
+            )
+            mejor_idx = tabla_reg["R²"].idxmax()
+            st.success(f"Mejor modelo: **{tabla_reg.loc[mejor_idx, 'Modelo']}** — R²={tabla_reg.loc[mejor_idx, 'R²']:.4f}")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 8 — ÁRBOL DE DECISIÓN
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[7]:
-    st.subheader("Unidad III — Árbol de Decisión")
-    st.caption("Clasificación honesta: ¿se CANCELARÁ la cita?  1 = cancelada  |  0 = resto  ·  clases desbalanceadas → AUC")
+if "Arbol de Decision" in _visible:
+    with tabs[_visible.index("Arbol de Decision")]:
+        st.subheader("Unidad III — Árbol de Decisión")
+        st.caption("Clasificación honesta: ¿se CANCELARÁ la cita?  1 = cancelada  |  0 = resto  ·  clases desbalanceadas → AUC")
 
-    with st.spinner("Entrenando Árbol de Decisión…"):
-        metricas_dt, conf_dt, feat_imp_dt = entrenar_arbol(spark, df)
+        with st.spinner("Entrenando Árbol de Decisión…"):
+            metricas_dt, conf_dt, feat_imp_dt = entrenar_arbol(spark, df)
 
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Accuracy",  f"{metricas_dt['Accuracy']*100:.1f}%")
-    c2.metric("Precision", f"{metricas_dt['Precision']:.4f}")
-    c3.metric("Recall",    f"{metricas_dt['Recall']:.4f}")
-    c4.metric("F1-Score",  f"{metricas_dt['F1']:.4f}")
-    c5.metric("AUC-ROC",   f"{metricas_dt['AUC']:.4f}")
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Accuracy",  f"{metricas_dt['Accuracy']*100:.1f}%")
+        c2.metric("Precision", f"{metricas_dt['Precision']:.4f}")
+        c3.metric("Recall",    f"{metricas_dt['Recall']:.4f}")
+        c4.metric("F1-Score",  f"{metricas_dt['F1']:.4f}")
+        c5.metric("AUC-ROC",   f"{metricas_dt['AUC']:.4f}")
 
-    col_a, col_b = st.columns(2)
+        col_a, col_b = st.columns(2)
 
-    with col_a:
-        # Matriz de confusión como heatmap
-        labels_map = {0: "No cancela", 1: "Cancela"}
-        conf_dt = conf_dt.assign(
-            label_str=conf_dt["label"].map(labels_map),
-            prediction_str=conf_dt["prediction"].map(labels_map),
-        )
-        pivot = conf_dt.pivot(index="label_str", columns="prediction_str", values="count").fillna(0)
-        fig = px.imshow(pivot, text_auto=True, color_continuous_scale=[[0, DARK], [1, GOLD]],
-                        title="Matriz de Confusión — Árbol de Decisión",
-                        labels=dict(x="Predicción", y="Real", color="Cantidad"))
-        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
-        st.plotly_chart(fig, use_container_width=True)
+        with col_a:
+            # Matriz de confusión como heatmap
+            labels_map = {0: "No cancela", 1: "Cancela"}
+            conf_dt = conf_dt.assign(
+                label_str=conf_dt["label"].map(labels_map),
+                prediction_str=conf_dt["prediction"].map(labels_map),
+            )
+            pivot = conf_dt.pivot(index="label_str", columns="prediction_str", values="count").fillna(0)
+            fig = px.imshow(pivot, text_auto=True, color_continuous_scale=[[0, DARK], [1, GOLD]],
+                            title="Matriz de Confusión — Árbol de Decisión",
+                            labels=dict(x="Predicción", y="Real", color="Cantidad"))
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig, use_container_width=True)
 
-    with col_b:
-        # Importancia de variables
-        feat_names = FEATURES_CANCEL
-        fig2 = px.bar(x=feat_names, y=feat_imp_dt,
-                      title="Importancia de Variables — Árbol de Decisión",
-                      color=feat_imp_dt, color_continuous_scale=[[0, "#333"], [1, GOLD]],
-                      labels={"x": "Variable", "y": "Importancia", "color": "Importancia"})
-        fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                           font_color="white", coloraxis_showscale=False)
-        st.plotly_chart(fig2, use_container_width=True)
+        with col_b:
+            # Importancia de variables
+            feat_names = FEATURES_CANCEL
+            fig2 = px.bar(x=feat_names, y=feat_imp_dt,
+                          title="Importancia de Variables — Árbol de Decisión",
+                          color=feat_imp_dt, color_continuous_scale=[[0, "#333"], [1, GOLD]],
+                          labels={"x": "Variable", "y": "Importancia", "color": "Importancia"})
+            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", coloraxis_showscale=False)
+            st.plotly_chart(fig2, use_container_width=True)
 
-    # Métricas en radar
-    col_c, col_d = st.columns(2)
-    with col_c:
-        categorias = ["Accuracy", "Precision", "Recall", "F1", "AUC"]
-        valores    = [metricas_dt[k] for k in categorias]
-        fig3 = go.Figure(go.Scatterpolar(
-            r=valores, theta=categorias, fill="toself",
-            line_color=GOLD, fillcolor=f"rgba(212,175,55,0.2)"
-        ))
-        fig3.update_layout(title="Métricas del Modelo (Radar)",
-                           polar=dict(radialaxis=dict(visible=True, range=[0, 1], color="white"),
-                                      angularaxis=dict(color="white")),
-                           paper_bgcolor="rgba(0,0,0,0)", font_color="white", showlegend=False)
-        st.plotly_chart(fig3, use_container_width=True)
+        # Métricas en radar
+        col_c, col_d = st.columns(2)
+        with col_c:
+            categorias = ["Accuracy", "Precision", "Recall", "F1", "AUC"]
+            valores    = [metricas_dt[k] for k in categorias]
+            fig3 = go.Figure(go.Scatterpolar(
+                r=valores, theta=categorias, fill="toself",
+                line_color=GOLD, fillcolor=f"rgba(212,175,55,0.2)"
+            ))
+            fig3.update_layout(title="Métricas del Modelo (Radar)",
+                               polar=dict(radialaxis=dict(visible=True, range=[0, 1], color="white"),
+                                          angularaxis=dict(color="white")),
+                               paper_bgcolor="rgba(0,0,0,0)", font_color="white", showlegend=False)
+            st.plotly_chart(fig3, use_container_width=True)
 
-    with col_d:
-        st.markdown("### Interpretación")
-        acc = metricas_dt["Accuracy"]
-        auc = metricas_dt["AUC"]
-        st.info(f"""
-**Árbol de Decisión — predicción de cancelación**
+        with col_d:
+            st.markdown("### Interpretación")
+            acc = metricas_dt["Accuracy"]
+            auc = metricas_dt["AUC"]
+            st.info(f"""
+    **Árbol de Decisión — predicción de cancelación**
 
-- **AUC {auc:.4f}**: capacidad discriminativa {'excelente' if auc > 0.8 else 'buena' if auc > 0.7 else 'moderada'}
-  (métrica clave: las clases están desbalanceadas ~8% cancelaciones)
-- **Accuracy {acc*100:.1f}%**: con clases desbalanceadas, el accuracy engaña → mirar AUC/Recall
-- **Feature más importante**: `{feat_names[feat_imp_dt.index(max(feat_imp_dt))]}`
-  ({max(feat_imp_dt)*100:.1f}% del poder predictivo)
-- **Sin fuga de datos**: se predice desde el contexto (hora, día, servicio), no desde el estado
-- **Aplicación**: reforzar recordatorios en los horarios/servicios de mayor riesgo
-        """)
+    - **AUC {auc:.4f}**: capacidad discriminativa {'excelente' if auc > 0.8 else 'buena' if auc > 0.7 else 'moderada'}
+      (métrica clave: las clases están desbalanceadas ~8% cancelaciones)
+    - **Accuracy {acc*100:.1f}%**: con clases desbalanceadas, el accuracy engaña → mirar AUC/Recall
+    - **Feature más importante**: `{feat_names[feat_imp_dt.index(max(feat_imp_dt))]}`
+      ({max(feat_imp_dt)*100:.1f}% del poder predictivo)
+    - **Sin fuga de datos**: se predice desde el contexto (hora, día, servicio), no desde el estado
+    - **Aplicación**: reforzar recordatorios en los horarios/servicios de mayor riesgo
+            """)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 9 — RANDOM FOREST
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[8]:
-    st.subheader("Unidad III — Random Forest")
-    st.caption("Mismo problema que el Árbol (cancelación) pero con 100 árboles → comparar AUC: el bosque suele ganar")
+if "Random Forest" in _visible:
+    with tabs[_visible.index("Random Forest")]:
+        st.subheader("Unidad III — Random Forest")
+        st.caption("Mismo problema que el Árbol (cancelación) pero con 100 árboles → comparar AUC: el bosque suele ganar")
 
-    with st.spinner("Entrenando Random Forest (100 árboles)…"):
-        metricas_rf, conf_rf, feat_imp_rf, dist_estados = entrenar_rf(spark, df)
+        with st.spinner("Entrenando Random Forest (100 árboles)…"):
+            metricas_rf, conf_rf, feat_imp_rf, dist_estados = entrenar_rf(spark, df)
 
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Accuracy",  f"{metricas_rf['Accuracy']*100:.1f}%")
-    c2.metric("Precision", f"{metricas_rf['Precision']:.4f}")
-    c3.metric("Recall",    f"{metricas_rf['Recall']:.4f}")
-    c4.metric("F1-Score",  f"{metricas_rf['F1']:.4f}")
-    c5.metric("AUC-ROC",   f"{metricas_rf['AUC']:.4f}")
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Accuracy",  f"{metricas_rf['Accuracy']*100:.1f}%")
+        c2.metric("Precision", f"{metricas_rf['Precision']:.4f}")
+        c3.metric("Recall",    f"{metricas_rf['Recall']:.4f}")
+        c4.metric("F1-Score",  f"{metricas_rf['F1']:.4f}")
+        c5.metric("AUC-ROC",   f"{metricas_rf['AUC']:.4f}")
 
-    col_a, col_b = st.columns(2)
+        col_a, col_b = st.columns(2)
 
-    with col_a:
-        labels_rf = {0: "No cancela", 1: "Cancela"}
-        conf_rf = conf_rf.assign(
-            cat_str=conf_rf["categoria"].map(labels_rf),
-            pred_str=conf_rf["prediction"].map(labels_rf),
-        )
-        pivot_rf = conf_rf.pivot(index="cat_str", columns="pred_str", values="count").fillna(0)
-        fig = px.imshow(pivot_rf, text_auto=True, color_continuous_scale=[[0, DARK], [1, RED]],
-                        title="Matriz de Confusión — Random Forest",
-                        labels=dict(x="Predicción", y="Real", color="Cantidad"))
-        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
-        st.plotly_chart(fig, use_container_width=True)
+        with col_a:
+            labels_rf = {0: "No cancela", 1: "Cancela"}
+            conf_rf = conf_rf.assign(
+                cat_str=conf_rf["categoria"].map(labels_rf),
+                pred_str=conf_rf["prediction"].map(labels_rf),
+            )
+            pivot_rf = conf_rf.pivot(index="cat_str", columns="pred_str", values="count").fillna(0)
+            fig = px.imshow(pivot_rf, text_auto=True, color_continuous_scale=[[0, DARK], [1, RED]],
+                            title="Matriz de Confusión — Random Forest",
+                            labels=dict(x="Predicción", y="Real", color="Cantidad"))
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig, use_container_width=True)
 
-    with col_b:
-        feat_names = FEATURES_CANCEL
-        fig2 = px.bar(x=feat_names, y=feat_imp_rf,
-                      title="Importancia de Variables — Random Forest",
-                      color=feat_imp_rf, color_continuous_scale=[[0, "#333"], [1, RED]],
-                      labels={"x": "Variable", "y": "Importancia"}, text_auto=".3f")
-        fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                           font_color="white", coloraxis_showscale=False)
-        st.plotly_chart(fig2, use_container_width=True)
+        with col_b:
+            feat_names = FEATURES_CANCEL
+            fig2 = px.bar(x=feat_names, y=feat_imp_rf,
+                          title="Importancia de Variables — Random Forest",
+                          color=feat_imp_rf, color_continuous_scale=[[0, "#333"], [1, RED]],
+                          labels={"x": "Variable", "y": "Importancia"}, text_auto=".3f")
+            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", coloraxis_showscale=False)
+            st.plotly_chart(fig2, use_container_width=True)
 
-    col_c, col_d = st.columns(2)
+        col_c, col_d = st.columns(2)
 
-    with col_c:
-        fig3 = px.pie(dist_estados, values="count", names="estado",
-                      title="Distribución Real de Estados en Datos de Entrenamiento",
-                      hole=0.35, color_discrete_sequence=px.colors.qualitative.Set2)
-        fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
-        st.plotly_chart(fig3, use_container_width=True)
+        with col_c:
+            fig3 = px.pie(dist_estados, values="count", names="estado",
+                          title="Distribución Real de Estados en Datos de Entrenamiento",
+                          hole=0.35, color_discrete_sequence=px.colors.qualitative.Set2)
+            fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig3, use_container_width=True)
 
-    with col_d:
-        categorias = ["Accuracy", "Precision", "Recall", "F1", "AUC"]
-        valores    = [metricas_rf[k] for k in categorias]
-        fig4 = go.Figure(go.Scatterpolar(
-            r=valores, theta=categorias, fill="toself",
-            line_color=RED, fillcolor="rgba(231,76,60,0.2)"
-        ))
-        fig4.update_layout(title="Métricas Random Forest (Radar)",
-                           polar=dict(radialaxis=dict(visible=True, range=[0, 1], color="white"),
-                                      angularaxis=dict(color="white")),
-                           paper_bgcolor="rgba(0,0,0,0)", font_color="white", showlegend=False)
-        st.plotly_chart(fig4, use_container_width=True)
+        with col_d:
+            categorias = ["Accuracy", "Precision", "Recall", "F1", "AUC"]
+            valores    = [metricas_rf[k] for k in categorias]
+            fig4 = go.Figure(go.Scatterpolar(
+                r=valores, theta=categorias, fill="toself",
+                line_color=RED, fillcolor="rgba(231,76,60,0.2)"
+            ))
+            fig4.update_layout(title="Métricas Random Forest (Radar)",
+                               polar=dict(radialaxis=dict(visible=True, range=[0, 1], color="white"),
+                                          angularaxis=dict(color="white")),
+                               paper_bgcolor="rgba(0,0,0,0)", font_color="white", showlegend=False)
+            st.plotly_chart(fig4, use_container_width=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 10 — CHURN / ABANDONO
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[9]:
-    st.subheader("Unidad III — Predicción de Abandono (Churn)")
-    st.caption("Random Forest · churn = cliente con recencia > percentil 70 · features SIN la recencia (sin fuga)")
+if "Churn / Abandono" in _visible:
+    with tabs[_visible.index("Churn / Abandono")]:
+        st.subheader("Unidad III — Predicción de Abandono (Churn)")
+        st.caption("Random Forest · churn = cliente con recencia > percentil 70 · features SIN la recencia (sin fuga)")
 
-    ch_metrics, ch_imp, ch_riesgo, (n_riesgo, n_total) = entrenar_churn(spark, df)
+        ch_metrics, ch_imp, ch_riesgo, (n_riesgo, n_total) = entrenar_churn(spark, df)
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("AUC-ROC", ch_metrics["AUC"], help="Evaluado en datos no vistos")
-    c2.metric("F1-Score", ch_metrics["F1"])
-    c3.metric("Clientes en riesgo", f"{n_riesgo:,}", delta=f"{n_riesgo/n_total*100:.0f}% del total")
-    c4.metric("Umbral recencia", f"{ch_metrics['umbral']:.0f} días")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("AUC-ROC", ch_metrics["AUC"], help="Evaluado en datos no vistos")
+        c2.metric("F1-Score", ch_metrics["F1"])
+        c3.metric("Clientes en riesgo", f"{n_riesgo:,}", delta=f"{n_riesgo/n_total*100:.0f}% del total")
+        c4.metric("Umbral recencia", f"{ch_metrics['umbral']:.0f} días")
 
-    col_a, col_b = st.columns([1, 1])
-    with col_a:
-        imp_df = pd.DataFrame(ch_imp, columns=["variable", "importancia"]).sort_values("importancia")
-        fig = px.bar(imp_df, x="importancia", y="variable", orientation="h",
-                     title="Qué anticipa el abandono (importancia de variables)",
-                     color="importancia", color_continuous_scale=[[0, "#333"], [1, RED]], text_auto=".3f")
-        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                          font_color="white", coloraxis_showscale=False)
-        st.plotly_chart(fig, use_container_width=True)
-    with col_b:
-        fig2 = go.Figure(go.Pie(values=[n_riesgo, n_total - n_riesgo],
-                                labels=["En riesgo", "Estables"], hole=0.5,
-                                marker_colors=[RED, GREEN]))
-        fig2.update_layout(title="Clientes en riesgo vs estables",
-                           paper_bgcolor="rgba(0,0,0,0)", font_color="white")
-        st.plotly_chart(fig2, use_container_width=True)
+        col_a, col_b = st.columns([1, 1])
+        with col_a:
+            imp_df = pd.DataFrame(ch_imp, columns=["variable", "importancia"]).sort_values("importancia")
+            fig = px.bar(imp_df, x="importancia", y="variable", orientation="h",
+                         title="Qué anticipa el abandono (importancia de variables)",
+                         color="importancia", color_continuous_scale=[[0, "#333"], [1, RED]], text_auto=".3f")
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              font_color="white", coloraxis_showscale=False)
+            st.plotly_chart(fig, use_container_width=True)
+        with col_b:
+            fig2 = go.Figure(go.Pie(values=[n_riesgo, n_total - n_riesgo],
+                                    labels=["En riesgo", "Estables"], hole=0.5,
+                                    marker_colors=[RED, GREEN]))
+            fig2.update_layout(title="Clientes en riesgo vs estables",
+                               paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig2, use_container_width=True)
 
-    st.subheader("Clientes con mayor probabilidad de abandono")
-    ch_show = ch_riesgo.copy()
-    ch_show["prob"] = ch_show["prob"].apply(lambda x: f"{x:.1f}%")
-    ch_show.columns = ["Cliente", "Nivel", "Citas", "Ticket prom.", "Cancel %", "Días sin cita", "Prob. abandono"]
-    st.dataframe(ch_show, use_container_width=True, hide_index=True)
+        st.subheader("Clientes con mayor probabilidad de abandono")
+        ch_show = ch_riesgo.copy()
+        ch_show["prob"] = ch_show["prob"].apply(lambda x: f"{x:.1f}%")
+        ch_show.columns = ["Cliente", "Nivel", "Citas", "Ticket prom.", "Cancel %", "Días sin cita", "Prob. abandono"]
+        st.dataframe(ch_show, use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 11 — DEMANDA
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[10]:
-    st.subheader("Unidad III — Predicción de Demanda y Horarios")
-    st.caption("Regresión supervisada (GBT): ¿cuántas citas esperar por hora, día y mes?")
+if "Demanda" in _visible:
+    with tabs[_visible.index("Demanda")]:
+        st.subheader("Unidad III — Predicción de Demanda y Horarios")
+        st.caption("Regresión supervisada (GBT): ¿cuántas citas esperar por hora, día y mes?")
 
-    dem_hora, dem_dia, dem_mes, dem_r2, dem_imp = analizar_demanda(spark, df)
+        dem_hora, dem_dia, dem_mes, dem_r2, dem_imp = analizar_demanda(spark, df)
 
-    hora_pico = dem_hora.loc[dem_hora["citas"].idxmax()]
-    dia_pico  = dem_dia.loc[dem_dia["citas"].idxmax()]
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Hora pico", f"{int(hora_pico['hora']):02d}:00", delta=f"{int(hora_pico['citas'])} citas")
-    c2.metric("Día más activo", dia_pico["dia_nombre"], delta=f"{int(dia_pico['citas'])} citas")
-    c3.metric("R² modelo GBT", dem_r2)
+        hora_pico = dem_hora.loc[dem_hora["citas"].idxmax()]
+        dia_pico  = dem_dia.loc[dem_dia["citas"].idxmax()]
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Hora pico", f"{int(hora_pico['hora']):02d}:00", delta=f"{int(hora_pico['citas'])} citas")
+        c2.metric("Día más activo", dia_pico["dia_nombre"], delta=f"{int(dia_pico['citas'])} citas")
+        c3.metric("R² modelo GBT", dem_r2)
 
-    col_a, col_b = st.columns(2)
-    with col_a:
-        fig = px.bar(dem_hora, x="hora", y="citas", title="Demanda por hora del día",
-                     color="citas", color_continuous_scale=[[0, "#333"], [1, GOLD]],
-                     labels={"hora": "Hora", "citas": "Citas"})
-        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                          font_color="white", coloraxis_showscale=False)
-        st.plotly_chart(fig, use_container_width=True)
-    with col_b:
-        fig2 = px.bar(dem_dia, x="dia_nombre", y="citas", title="Demanda por día de la semana",
-                      color="citas", color_continuous_scale=[[0, "#333"], [1, BLUE]],
-                      labels={"dia_nombre": "", "citas": "Citas"})
-        fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                           font_color="white", coloraxis_showscale=False)
-        st.plotly_chart(fig2, use_container_width=True)
+        col_a, col_b = st.columns(2)
+        with col_a:
+            fig = px.bar(dem_hora, x="hora", y="citas", title="Demanda por hora del día",
+                         color="citas", color_continuous_scale=[[0, "#333"], [1, GOLD]],
+                         labels={"hora": "Hora", "citas": "Citas"})
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              font_color="white", coloraxis_showscale=False)
+            st.plotly_chart(fig, use_container_width=True)
+        with col_b:
+            fig2 = px.bar(dem_dia, x="dia_nombre", y="citas", title="Demanda por día de la semana",
+                          color="citas", color_continuous_scale=[[0, "#333"], [1, BLUE]],
+                          labels={"dia_nombre": "", "citas": "Citas"})
+            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", coloraxis_showscale=False)
+            st.plotly_chart(fig2, use_container_width=True)
 
-    col_c, col_d = st.columns([2, 1])
-    with col_c:
-        fig3 = go.Figure()
-        fig3.add_trace(go.Bar(x=dem_mes["mes_nombre"], y=dem_mes["citas"], name="Citas", marker_color=GOLD))
-        fig3.add_trace(go.Scatter(x=dem_mes["mes_nombre"], y=dem_mes["cancel_pct"], name="Cancelación %",
-                                  yaxis="y2", line=dict(color=RED, width=2)))
-        fig3.update_layout(title="Estacionalidad mensual: citas y % cancelación",
-                           yaxis=dict(title="Citas"), yaxis2=dict(title="Cancel %", overlaying="y", side="right"),
-                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
-        st.plotly_chart(fig3, use_container_width=True)
-    with col_d:
-        imp_df = pd.DataFrame(dem_imp, columns=["variable", "importancia"]).sort_values("importancia")
-        fig4 = px.bar(imp_df, x="importancia", y="variable", orientation="h",
-                      title="Qué determina la demanda", color="importancia",
-                      color_continuous_scale=[[0, "#333"], [1, GREEN]], text_auto=".3f")
-        fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                           font_color="white", coloraxis_showscale=False)
-        st.plotly_chart(fig4, use_container_width=True)
+        col_c, col_d = st.columns([2, 1])
+        with col_c:
+            fig3 = go.Figure()
+            fig3.add_trace(go.Bar(x=dem_mes["mes_nombre"], y=dem_mes["citas"], name="Citas", marker_color=GOLD))
+            fig3.add_trace(go.Scatter(x=dem_mes["mes_nombre"], y=dem_mes["cancel_pct"], name="Cancelación %",
+                                      yaxis="y2", line=dict(color=RED, width=2)))
+            fig3.update_layout(title="Estacionalidad mensual: citas y % cancelación",
+                               yaxis=dict(title="Citas"), yaxis2=dict(title="Cancel %", overlaying="y", side="right"),
+                               paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig3, use_container_width=True)
+        with col_d:
+            imp_df = pd.DataFrame(dem_imp, columns=["variable", "importancia"]).sort_values("importancia")
+            fig4 = px.bar(imp_df, x="importancia", y="variable", orientation="h",
+                          title="Qué determina la demanda", color="importancia",
+                          color_continuous_scale=[[0, "#333"], [1, GREEN]], text_auto=".3f")
+            fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", coloraxis_showscale=False)
+            st.plotly_chart(fig4, use_container_width=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 12 — KMEANS
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[11]:
-    st.subheader("Unidad IV — KMeans Clustering")
-    st.caption("Segmentación no supervisada de citas por duración, precio e ingreso")
+if "KMeans" in _visible:
+    with tabs[_visible.index("KMeans")]:
+        st.subheader("Unidad IV — KMeans Clustering")
+        st.caption("Segmentación no supervisada de citas por duración, precio e ingreso")
 
-    with st.spinner(f"Ejecutando KMeans K={k_clusters} y Método del Codo…"):
-        ks, wcss, sil_scores, km_pdf, sil, centers = entrenar_kmeans(df_vector, k_clusters)
+        with st.spinner(f"Ejecutando KMeans K={k_clusters} y Método del Codo…"):
+            ks, wcss, sil_scores, km_pdf, sil, centers = entrenar_kmeans(df_vector, k_clusters)
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Clusters (K)",        k_clusters)
-    c2.metric("Silhouette Score",    sil, delta="Bueno" if sil > 0.5 else "Aceptable" if sil > 0.2 else "Débil")
-    c3.metric("Total Registros",     f"{len(km_pdf):,}")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Clusters (K)",        k_clusters)
+        c2.metric("Silhouette Score",    sil, delta="Bueno" if sil > 0.5 else "Aceptable" if sil > 0.2 else "Débil")
+        c3.metric("Total Registros",     f"{len(km_pdf):,}")
 
-    col_a, col_b = st.columns(2)
+        col_a, col_b = st.columns(2)
 
-    with col_a:
-        fig = make_subplots(rows=1, cols=2, subplot_titles=("WCSS — Método del Codo", "Silhouette por K"))
-        fig.add_trace(go.Scatter(x=ks, y=wcss, mode="lines+markers",
-                                 line=dict(color=GOLD, width=2), marker=dict(size=8)), row=1, col=1)
-        fig.add_trace(go.Scatter(x=ks, y=sil_scores, mode="lines+markers",
-                                 line=dict(color=GREEN, width=2), marker=dict(size=8)), row=1, col=2)
-        fig.add_vline(x=k_clusters, line_dash="dash", line_color=RED)
-        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                          font_color="white", showlegend=False, title_text="Evaluación de K")
-        st.plotly_chart(fig, use_container_width=True)
+        with col_a:
+            fig = make_subplots(rows=1, cols=2, subplot_titles=("WCSS — Método del Codo", "Silhouette por K"))
+            fig.add_trace(go.Scatter(x=ks, y=wcss, mode="lines+markers",
+                                     line=dict(color=GOLD, width=2), marker=dict(size=8)), row=1, col=1)
+            fig.add_trace(go.Scatter(x=ks, y=sil_scores, mode="lines+markers",
+                                     line=dict(color=GREEN, width=2), marker=dict(size=8)), row=1, col=2)
+            fig.add_vline(x=k_clusters, line_dash="dash", line_color=RED)
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              font_color="white", showlegend=False, title_text="Evaluación de K")
+            st.plotly_chart(fig, use_container_width=True)
 
-    with col_b:
-        fig2 = px.scatter(km_pdf, x="precio", y="ingreso",
-                          color=km_pdf["cluster"].astype(str),
-                          title=f"Segmentación K={k_clusters} — Precio vs Ingreso",
-                          hover_data=["servicio", "barbero", "duracion_min", "estado"],
-                          color_discrete_sequence=px.colors.qualitative.Set1,
-                          labels={"color": "Cluster", "precio": "Precio ($MXN)", "ingreso": "Ingreso ($MXN)"})
-        fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
-        st.plotly_chart(fig2, use_container_width=True)
+        with col_b:
+            fig2 = px.scatter(km_pdf, x="precio", y="ingreso",
+                              color=km_pdf["cluster"].astype(str),
+                              title=f"Segmentación K={k_clusters} — Precio vs Ingreso",
+                              hover_data=["servicio", "barbero", "duracion_min", "estado"],
+                              color_discrete_sequence=px.colors.qualitative.Set1,
+                              labels={"color": "Cluster", "precio": "Precio ($MXN)", "ingreso": "Ingreso ($MXN)"})
+            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig2, use_container_width=True)
 
-    col_c, col_d = st.columns(2)
+        col_c, col_d = st.columns(2)
 
-    with col_c:
-        fig3 = px.scatter_3d(km_pdf, x="precio", y="duracion_min", z="ingreso",
-                             color=km_pdf["cluster"].astype(str),
-                             title="Clustering 3D — Precio / Duración / Ingreso",
-                             hover_name="servicio",
-                             color_discrete_sequence=px.colors.qualitative.Set1,
-                             labels={"color": "Cluster", "duracion_min": "Duración (min)"})
-        fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
-        st.plotly_chart(fig3, use_container_width=True)
+        with col_c:
+            fig3 = px.scatter_3d(km_pdf, x="precio", y="duracion_min", z="ingreso",
+                                 color=km_pdf["cluster"].astype(str),
+                                 title="Clustering 3D — Precio / Duración / Ingreso",
+                                 hover_name="servicio",
+                                 color_discrete_sequence=px.colors.qualitative.Set1,
+                                 labels={"color": "Cluster", "duracion_min": "Duración (min)"})
+            fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig3, use_container_width=True)
 
-    with col_d:
-        svc_cluster = km_pdf.groupby(["cluster", "servicio"]).size().reset_index(name="count")
-        fig4 = px.bar(svc_cluster, x="cluster", y="count", color="servicio",
-                      title="Servicios por Cluster",
-                      labels={"cluster": "Cluster", "count": "Citas", "servicio": "Servicio"},
-                      color_discrete_sequence=px.colors.qualitative.Pastel)
-        fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
-        st.plotly_chart(fig4, use_container_width=True)
+        with col_d:
+            svc_cluster = km_pdf.groupby(["cluster", "servicio"]).size().reset_index(name="count")
+            fig4 = px.bar(svc_cluster, x="cluster", y="count", color="servicio",
+                          title="Servicios por Cluster",
+                          labels={"cluster": "Cluster", "count": "Citas", "servicio": "Servicio"},
+                          color_discrete_sequence=px.colors.qualitative.Pastel)
+            fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig4, use_container_width=True)
 
-    st.subheader("Centroides de Clusters")
-    centro_df = pd.DataFrame(centers, columns=["Duración (min)", "Precio ($)", "Ingreso ($)"])
-    centro_df.index = [f"Cluster {i}" for i in range(len(centers))]
-    st.dataframe(centro_df.style.format("{:.2f}"), use_container_width=True)
+        st.subheader("Centroides de Clusters")
+        centro_df = pd.DataFrame(centers, columns=["Duración (min)", "Precio ($)", "Ingreso ($)"])
+        centro_df.index = [f"Cluster {i}" for i in range(len(centers))]
+        st.dataframe(centro_df.style.format("{:.2f}"), use_container_width=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 13 — PCA
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[12]:
-    st.subheader("Unidad IV — PCA + KMeans")
-    st.caption("Reducción de dimensionalidad: 3 features → 2 componentes principales → clustering")
+if "PCA" in _visible:
+    with tabs[_visible.index("PCA")]:
+        st.subheader("Unidad IV — PCA + KMeans")
+        st.caption("Reducción de dimensionalidad: 3 features → 2 componentes principales → clustering")
 
-    with st.spinner("Ejecutando PCA + KMeans…"):
-        pca_pdf, varianza, pca_sil = entrenar_pca(df_vector, df)
+        with st.spinner("Ejecutando PCA + KMeans…"):
+            pca_pdf, varianza, pca_sil = entrenar_pca(df_vector, df)
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Varianza PC1",        f"{varianza[0]:.1f}%")
-    c2.metric("Varianza PC2",        f"{varianza[1]:.1f}%")
-    c3.metric("Varianza Total",      f"{sum(varianza):.1f}%")
-    c4.metric("Silhouette (PCA+KM)", pca_sil)
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Varianza PC1",        f"{varianza[0]:.1f}%")
+        c2.metric("Varianza PC2",        f"{varianza[1]:.1f}%")
+        c3.metric("Varianza Total",      f"{sum(varianza):.1f}%")
+        c4.metric("Silhouette (PCA+KM)", pca_sil)
 
-    col_a, col_b = st.columns(2)
+        col_a, col_b = st.columns(2)
 
-    with col_a:
-        fig = px.scatter(pca_pdf, x="PC1", y="PC2",
-                         color=pca_pdf["cluster"].astype(str),
-                         hover_data=["servicio", "barbero", "precio", "duracion_min", "ingreso"],
-                         title=f"PCA + KMeans — Varianza explicada: {sum(varianza):.1f}%  |  Silhouette: {pca_sil}",
-                         color_discrete_sequence=px.colors.qualitative.Set1,
-                         labels={"color": "Cluster",
-                                 "PC1": f"PC1 ({varianza[0]:.1f}% varianza)",
-                                 "PC2": f"PC2 ({varianza[1]:.1f}% varianza)"})
-        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
-        st.plotly_chart(fig, use_container_width=True)
+        with col_a:
+            fig = px.scatter(pca_pdf, x="PC1", y="PC2",
+                             color=pca_pdf["cluster"].astype(str),
+                             hover_data=["servicio", "barbero", "precio", "duracion_min", "ingreso"],
+                             title=f"PCA + KMeans — Varianza explicada: {sum(varianza):.1f}%  |  Silhouette: {pca_sil}",
+                             color_discrete_sequence=px.colors.qualitative.Set1,
+                             labels={"color": "Cluster",
+                                     "PC1": f"PC1 ({varianza[0]:.1f}% varianza)",
+                                     "PC2": f"PC2 ({varianza[1]:.1f}% varianza)"})
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig, use_container_width=True)
 
-    with col_b:
-        # Varianza explicada
-        fig2 = go.Figure()
-        fig2.add_trace(go.Bar(x=["PC1", "PC2"], y=varianza,
-                              marker_color=[GOLD, BLUE], text=[f"{v:.1f}%" for v in varianza],
-                              textposition="outside", textfont_color="white"))
-        fig2.add_trace(go.Scatter(x=["PC1", "PC2"], y=[sum(varianza[:1]), sum(varianza)],
-                                  mode="lines+markers+text", name="Varianza acumulada",
-                                  line_color=GREEN, text=[f"{sum(varianza[:1]):.1f}%", f"{sum(varianza):.1f}%"],
-                                  textposition="top right", textfont_color="white"))
-        fig2.update_layout(title="Varianza Explicada por Componente Principal",
-                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                           font_color="white", yaxis_title="%", showlegend=True)
-        st.plotly_chart(fig2, use_container_width=True)
+        with col_b:
+            # Varianza explicada
+            fig2 = go.Figure()
+            fig2.add_trace(go.Bar(x=["PC1", "PC2"], y=varianza,
+                                  marker_color=[GOLD, BLUE], text=[f"{v:.1f}%" for v in varianza],
+                                  textposition="outside", textfont_color="white"))
+            fig2.add_trace(go.Scatter(x=["PC1", "PC2"], y=[sum(varianza[:1]), sum(varianza)],
+                                      mode="lines+markers+text", name="Varianza acumulada",
+                                      line_color=GREEN, text=[f"{sum(varianza[:1]):.1f}%", f"{sum(varianza):.1f}%"],
+                                      textposition="top right", textfont_color="white"))
+            fig2.update_layout(title="Varianza Explicada por Componente Principal",
+                               paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", yaxis_title="%", showlegend=True)
+            st.plotly_chart(fig2, use_container_width=True)
 
-    col_c, col_d = st.columns(2)
+        col_c, col_d = st.columns(2)
 
-    with col_c:
-        svc_pca = pca_pdf.groupby(["cluster", "servicio"]).size().reset_index(name="count")
-        fig3 = px.sunburst(svc_pca, path=["cluster", "servicio"], values="count",
-                           title="Composición de Clusters por Servicio (Sunburst)",
-                           color_discrete_sequence=px.colors.qualitative.Set1)
-        fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
-        st.plotly_chart(fig3, use_container_width=True)
+        with col_c:
+            svc_pca = pca_pdf.groupby(["cluster", "servicio"]).size().reset_index(name="count")
+            fig3 = px.sunburst(svc_pca, path=["cluster", "servicio"], values="count",
+                               title="Composición de Clusters por Servicio (Sunburst)",
+                               color_discrete_sequence=px.colors.qualitative.Set1)
+            fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig3, use_container_width=True)
 
-    with col_d:
-        perfil = pca_pdf.groupby("cluster").agg(
-            avg_precio=("precio", "mean"),
-            avg_ingreso=("ingreso", "mean"),
-            avg_duracion=("duracion_min", "mean"),
-            total_citas=("precio", "count"),
-        ).reset_index()
-        fig4 = px.bar(perfil, x="cluster", y=["avg_precio", "avg_ingreso", "avg_duracion"],
-                      barmode="group", title="Perfil de Clusters PCA (promedios)",
-                      labels={"value": "Valor", "cluster": "Cluster", "variable": "Métrica"},
-                      color_discrete_sequence=[GOLD, GREEN, BLUE])
-        fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
-        st.plotly_chart(fig4, use_container_width=True)
+        with col_d:
+            perfil = pca_pdf.groupby("cluster").agg(
+                avg_precio=("precio", "mean"),
+                avg_ingreso=("ingreso", "mean"),
+                avg_duracion=("duracion_min", "mean"),
+                total_citas=("precio", "count"),
+            ).reset_index()
+            fig4 = px.bar(perfil, x="cluster", y=["avg_precio", "avg_ingreso", "avg_duracion"],
+                          barmode="group", title="Perfil de Clusters PCA (promedios)",
+                          labels={"value": "Valor", "cluster": "Cluster", "variable": "Métrica"},
+                          color_discrete_sequence=[GOLD, GREEN, BLUE])
+            fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig4, use_container_width=True)
 
-    st.subheader("Interpretación de Clusters PCA")
-    avg = pca_pdf.groupby("cluster")[["precio", "ingreso", "duracion_min"]].mean()
-    for cl in sorted(pca_pdf["cluster"].unique()):
-        row    = avg.loc[cl]
-        global_avg = pca_pdf[["precio", "ingreso", "duracion_min"]].mean()
-        perfil_txt = "Premium" if row["ingreso"] > global_avg["ingreso"] and row["precio"] > global_avg["precio"] \
-                     else "Económico" if row["ingreso"] < global_avg["ingreso"] \
-                     else "Estándar"
-        st.info(f"**Cluster {cl} — {perfil_txt}**: "
-                f"Precio ${row['precio']:.0f} | Ingreso ${row['ingreso']:.0f} | "
-                f"Duración {row['duracion_min']:.0f} min")
+        st.subheader("Interpretación de Clusters PCA")
+        avg = pca_pdf.groupby("cluster")[["precio", "ingreso", "duracion_min"]].mean()
+        for cl in sorted(pca_pdf["cluster"].unique()):
+            row    = avg.loc[cl]
+            global_avg = pca_pdf[["precio", "ingreso", "duracion_min"]].mean()
+            perfil_txt = "Premium" if row["ingreso"] > global_avg["ingreso"] and row["precio"] > global_avg["precio"] \
+                         else "Económico" if row["ingreso"] < global_avg["ingreso"] \
+                         else "Estándar"
+            st.info(f"**Cluster {cl} — {perfil_txt}**: "
+                    f"Precio ${row['precio']:.0f} | Ingreso ${row['ingreso']:.0f} | "
+                    f"Duración {row['duracion_min']:.0f} min")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 14 — SEGMENTACIÓN DE CLIENTES
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[13]:
-    st.subheader("Unidad IV — Segmentación de Clientes (RFM + KMeans)")
-    st.caption("1000 clientes reales agrupados en 4 segmentos por comportamiento de consumo")
+if "Segmentacion Clientes" in _visible:
+    with tabs[_visible.index("Segmentacion Clientes")]:
+        st.subheader("Unidad IV — Segmentación de Clientes (RFM + KMeans)")
+        st.caption("1000 clientes reales agrupados en 4 segmentos por comportamiento de consumo")
 
-    seg_pdf, seg_sil, seg_stats = entrenar_segmentacion(spark, df)
+        seg_pdf, seg_sil, seg_stats = entrenar_segmentacion(spark, df)
 
-    dist = seg_pdf["segmento"].value_counts().reset_index()
-    dist.columns = ["segmento", "clientes"]
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Clientes", f"{len(seg_pdf):,}")
-    c2.metric("Segmentos", seg_pdf["segmento"].nunique())
-    c3.metric("Silhouette", seg_sil, delta="Bueno" if seg_sil > 0.5 else "Aceptable" if seg_sil > 0.2 else "Débil")
-    vip = int(dist.loc[dist["segmento"] == "VIP", "clientes"].sum())
-    c4.metric("Clientes VIP", vip)
+        dist = seg_pdf["segmento"].value_counts().reset_index()
+        dist.columns = ["segmento", "clientes"]
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Clientes", f"{len(seg_pdf):,}")
+        c2.metric("Segmentos", seg_pdf["segmento"].nunique())
+        c3.metric("Silhouette", seg_sil, delta="Bueno" if seg_sil > 0.5 else "Aceptable" if seg_sil > 0.2 else "Débil")
+        vip = int(dist.loc[dist["segmento"] == "VIP", "clientes"].sum())
+        c4.metric("Clientes VIP", vip)
 
-    col_a, col_b = st.columns(2)
-    with col_a:
-        fig = px.pie(dist, values="clientes", names="segmento", hole=0.45,
-                     title="Distribución de Clientes por Segmento",
-                     color_discrete_sequence=px.colors.qualitative.Set2)
-        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
-        st.plotly_chart(fig, use_container_width=True)
-    with col_b:
-        fig2 = px.scatter(seg_pdf, x="total_citas", y="gasto_total", color="segmento",
-                          size="gasto_promedio", hover_name="cliente",
-                          title="Clientes: Frecuencia vs Gasto (color = segmento)",
-                          labels={"total_citas": "Total de citas", "gasto_total": "Gasto total ($MXN)"},
-                          color_discrete_sequence=px.colors.qualitative.Set2)
-        fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
-        st.plotly_chart(fig2, use_container_width=True)
+        col_a, col_b = st.columns(2)
+        with col_a:
+            fig = px.pie(dist, values="clientes", names="segmento", hole=0.45,
+                         title="Distribución de Clientes por Segmento",
+                         color_discrete_sequence=px.colors.qualitative.Set2)
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig, use_container_width=True)
+        with col_b:
+            fig2 = px.scatter(seg_pdf, x="total_citas", y="gasto_total", color="segmento",
+                              size="gasto_promedio", hover_name="cliente",
+                              title="Clientes: Frecuencia vs Gasto (color = segmento)",
+                              labels={"total_citas": "Total de citas", "gasto_total": "Gasto total ($MXN)"},
+                              color_discrete_sequence=px.colors.qualitative.Set2)
+            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig2, use_container_width=True)
 
-    st.subheader("Perfil promedio de cada segmento")
-    st.dataframe(seg_stats[["segmento", "num_clientes", "citas_prom", "gasto_total_prom",
-                            "ticket_prom", "cancelacion_pct", "dias_inactivo_prom"]],
-                 use_container_width=True, hide_index=True)
-    st.subheader("Top clientes VIP")
-    st.dataframe(seg_pdf[seg_pdf["segmento"] == "VIP"]
-                 .sort_values("gasto_total", ascending=False)
-                 .head(10)[["cliente", "nivel", "total_citas", "gasto_total", "gasto_promedio"]],
-                 use_container_width=True, hide_index=True)
+        st.subheader("Perfil promedio de cada segmento")
+        st.dataframe(seg_stats[["segmento", "num_clientes", "citas_prom", "gasto_total_prom",
+                                "ticket_prom", "cancelacion_pct", "dias_inactivo_prom"]],
+                     use_container_width=True, hide_index=True)
+        st.subheader("Top clientes VIP")
+        st.dataframe(seg_pdf[seg_pdf["segmento"] == "VIP"]
+                     .sort_values("gasto_total", ascending=False)
+                     .head(10)[["cliente", "nivel", "total_citas", "gasto_total", "gasto_promedio"]],
+                     use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 15 — RECOMENDACIÓN
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[14]:
-    st.subheader("Unidad IV — Recomendación de Servicios (FP-Growth)")
-    st.caption("Market Basket Analysis: 'los clientes que piden A también piden B'")
+if "Recomendacion" in _visible:
+    with tabs[_visible.index("Recomendacion")]:
+        st.subheader("Unidad IV — Recomendación de Servicios (FP-Growth)")
+        st.caption("Market Basket Analysis: 'los clientes que piden A también piden B'")
 
-    freq_pdf, rules_pdf, pop_pdf = entrenar_recomendacion(spark, df)
+        freq_pdf, rules_pdf, pop_pdf = entrenar_recomendacion(spark, df)
 
-    c1, c2 = st.columns(2)
-    c1.metric("Reglas encontradas", len(rules_pdf))
-    c2.metric("Servicios analizados", pop_pdf["servicio"].nunique())
+        c1, c2 = st.columns(2)
+        c1.metric("Reglas encontradas", len(rules_pdf))
+        c2.metric("Servicios analizados", pop_pdf["servicio"].nunique())
 
-    col_a, col_b = st.columns(2)
-    with col_a:
-        fig = px.bar(pop_pdf.head(12).sort_values("veces_pedido"),
-                     x="veces_pedido", y="servicio", orientation="h", color="categoria",
-                     title="Servicios más solicitados",
-                     labels={"veces_pedido": "Veces pedido", "servicio": ""},
-                     color_discrete_sequence=px.colors.qualitative.Set2)
-        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
-        st.plotly_chart(fig, use_container_width=True)
-    with col_b:
-        st.markdown("**Itemsets frecuentes (servicios que aparecen juntos)**")
-        st.dataframe(freq_pdf.rename(columns={"items": "Servicios", "freq": "Frecuencia"}),
-                     use_container_width=True, hide_index=True)
+        col_a, col_b = st.columns(2)
+        with col_a:
+            fig = px.bar(pop_pdf.head(12).sort_values("veces_pedido"),
+                         x="veces_pedido", y="servicio", orientation="h", color="categoria",
+                         title="Servicios más solicitados",
+                         labels={"veces_pedido": "Veces pedido", "servicio": ""},
+                         color_discrete_sequence=px.colors.qualitative.Set2)
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig, use_container_width=True)
+        with col_b:
+            st.markdown("**Itemsets frecuentes (servicios que aparecen juntos)**")
+            st.dataframe(freq_pdf.rename(columns={"items": "Servicios", "freq": "Frecuencia"}),
+                         use_container_width=True, hide_index=True)
 
-    st.subheader("Reglas de asociación (ordenadas por lift)")
-    if len(rules_pdf) > 0:
-        st.dataframe(rules_pdf.rename(columns={
-            "si_pide": "Si pide", "tambien_pedira": "También pedirá",
-            "confianza_pct": "Confianza %", "lift": "Lift", "support_pct": "Support %"}),
-            use_container_width=True, hide_index=True)
-        st.caption("lift > 1.5 → recomendación fuerte · lift > 1.0 → válida · lift < 1.0 → no recomendar")
-    else:
-        st.warning("No se encontraron reglas con los umbrales actuales (dataset con poca co-ocurrencia por cliente).")
+        st.subheader("Reglas de asociación (ordenadas por lift)")
+        if len(rules_pdf) > 0:
+            st.dataframe(rules_pdf.rename(columns={
+                "si_pide": "Si pide", "tambien_pedira": "También pedirá",
+                "confianza_pct": "Confianza %", "lift": "Lift", "support_pct": "Support %"}),
+                use_container_width=True, hide_index=True)
+            st.caption("lift > 1.5 → recomendación fuerte · lift > 1.0 → válida · lift < 1.0 → no recomendar")
+        else:
+            st.warning("No se encontraron reglas con los umbrales actuales (dataset con poca co-ocurrencia por cliente).")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FOOTER
