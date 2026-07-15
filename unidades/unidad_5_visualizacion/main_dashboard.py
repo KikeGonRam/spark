@@ -23,7 +23,7 @@ import numpy as np
 from config.mongo_spark_conexion_sinnulos import (
     FEATURES_CANCEL, DIAS_SEMANA, MESES, get_clientes_df,
     get_pagos_df, get_loyalty_df, get_horarios_df, get_utilizacion_barberos_df,
-    get_productos_df,
+    get_productos_df, get_pedidos_df, get_top_productos_df, get_publicaciones_df,
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -406,6 +406,21 @@ def analizar_utilizacion(_df_pandas):
 def analizar_inventario():
     return get_productos_df()
 
+@st.cache_resource(show_spinner="Analizando pedidos de tienda…")
+def analizar_pedidos(_spark):
+    pedidos_sdf = get_pedidos_df(_spark)
+    if pedidos_sdf is None:
+        return None, None
+    top = get_top_productos_df()
+    return pedidos_sdf.toPandas(), top
+
+@st.cache_resource(show_spinner="Analizando engagement del muro social…")
+def analizar_publicaciones(_spark):
+    pub_sdf = get_publicaciones_df(_spark)
+    if pub_sdf is None:
+        return None
+    return pub_sdf.toPandas()
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
@@ -484,8 +499,8 @@ st.divider()
 # muestran (15 pestañas a la vez desbordan la barra en una exposición).
 # 'Resumen Ejecutivo' se incluye en todos los grupos como ancla.
 _TAB_GROUPS = {
-    "Todas las unidades": ['Resumen Ejecutivo', 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario', 'Regresion', 'Arbol de Decision', 'Random Forest', 'Churn / Abandono', 'Demanda', 'KMeans', 'PCA', 'Segmentacion Clientes', 'Recomendacion'],
-    "Unidad II — Preparación": ['Resumen Ejecutivo', 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario'],
+    "Todas las unidades": ['Resumen Ejecutivo', 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario', 'Tienda y Pedidos', 'Publicaciones', 'Regresion', 'Arbol de Decision', 'Random Forest', 'Churn / Abandono', 'Demanda', 'KMeans', 'PCA', 'Segmentacion Clientes', 'Recomendacion'],
+    "Unidad II — Preparación": ['Resumen Ejecutivo', 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario', 'Tienda y Pedidos', 'Publicaciones'],
     "Unidad III — Supervisado": ['Resumen Ejecutivo', 'Regresion', 'Arbol de Decision', 'Random Forest', 'Churn / Abandono', 'Demanda'],
     "Unidad IV — No supervisado": ['Resumen Ejecutivo', 'KMeans', 'PCA', 'Segmentacion Clientes', 'Recomendacion'],
 }
@@ -759,7 +774,7 @@ if "Inventario" in _visible:
             st.warning("Sin productos disponibles.")
         else:
             alertas = productos[productos["necesita_reorden"]]
-            venta = productos[productos["tipo"] == "venta_cliente"]
+            venta = productos[productos["tipo"] == "venta"]
             valor_inventario = (productos["precio_compra"] * productos["stock_actual"]).sum()
 
             c1, c2, c3, c4 = st.columns(4)
@@ -791,6 +806,106 @@ if "Inventario" in _visible:
                 st.warning(f"{len(alertas)} producto(s) requieren reorden inmediato.", icon=":material/warning:")
             else:
                 st.success("Inventario saludable — sin alertas de reorden.")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — TIENDA Y PEDIDOS
+# ══════════════════════════════════════════════════════════════════════════════
+if "Tienda y Pedidos" in _visible:
+    with tabs[_visible.index("Tienda y Pedidos")]:
+        st.subheader("Unidad II — Pedidos de Tienda (colección `orders`)")
+        st.caption("Add-ons de cita ('cita') vs compras sueltas ('tienda') — checkout de productos")
+
+        pedidos_pdf, top_pdf = analizar_pedidos(spark)
+        if pedidos_pdf is None or pedidos_pdf.empty:
+            st.warning("Sin pedidos disponibles.")
+        else:
+            entregados = pedidos_pdf[pedidos_pdf["estado"] == "entregado"]
+            ingreso_total = entregados["total"].sum()
+            tienda = pedidos_pdf[pedidos_pdf["tipo"] == "tienda"]
+            cancelados = tienda[tienda["estado"] == "cancelado"]
+            tasa_cancel = round(len(cancelados) / len(tienda) * 100, 1) if len(tienda) else 0.0
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Pedidos totales", f"{len(pedidos_pdf):,}")
+            c2.metric("Ingreso entregado", f"${ingreso_total:,.0f}")
+            c3.metric("Ticket promedio", f"${entregados['total'].mean():,.0f}" if len(entregados) else "N/A")
+            c4.metric("Cancelación tienda", f"{tasa_cancel}%")
+
+            col_a, col_b = st.columns(2)
+            with col_a:
+                dist = pedidos_pdf.groupby(["tipo", "estado"]).size().reset_index(name="pedidos")
+                fig = px.bar(dist, x="tipo", y="pedidos", color="estado",
+                             title="Distribución de pedidos por tipo y estado",
+                             barmode="stack", color_discrete_sequence=px.colors.qualitative.Set2)
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig, use_container_width=True)
+            with col_b:
+                ing_tipo = entregados.groupby("tipo")["total"].sum().reset_index()
+                fig2 = px.pie(ing_tipo, values="total", names="tipo", hole=0.45,
+                              title="Ingreso entregado por tipo (cita vs tienda)",
+                              color_discrete_sequence=[GOLD, BLUE])
+                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig2, use_container_width=True)
+
+            if top_pdf is not None and len(top_pdf):
+                resumen_top = (top_pdf.groupby("producto")
+                               .agg(unidades=("cantidad", "sum"), ingreso=("subtotal", "sum"))
+                               .sort_values("unidades", ascending=False).head(10).reset_index())
+                fig3 = px.bar(resumen_top, x="unidades", y="producto", orientation="h",
+                              title="Top 10 productos más vendidos (unidades, pedidos entregados)",
+                              color="unidades", color_continuous_scale=[[0, "#333"], [1, GOLD]])
+                fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                   font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+                st.plotly_chart(fig3, use_container_width=True)
+
+            citas_addon = len(pedidos_pdf[pedidos_pdf["tipo"] == "cita"])
+            pct_addon = round(ing_tipo.set_index("tipo")["total"].get("cita", 0) / ingreso_total * 100, 1) if ingreso_total else 0
+            st.info(f"Los add-ons dentro de citas ({citas_addon:,} pedidos) representan el {pct_addon}% del "
+                    f"ingreso de tienda — el checkout durante la reserva convierte mejor que la tienda suelta.",
+                    icon=":material/info:")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — PUBLICACIONES (MURO SOCIAL)
+# ══════════════════════════════════════════════════════════════════════════════
+if "Publicaciones" in _visible:
+    with tabs[_visible.index("Publicaciones")]:
+        st.subheader("Unidad II — Engagement del Muro de Inspiración")
+        st.caption("Colecciones `works` / `work_images` / `comments` / `reactions` — portafolio social por barbero")
+
+        pub_pdf = analizar_publicaciones(spark)
+        if pub_pdf is None or pub_pdf.empty:
+            st.warning("Sin publicaciones disponibles.")
+        else:
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Barberos con publicaciones", len(pub_pdf))
+            c2.metric("Publicaciones totales", int(pub_pdf["publicaciones"].sum()))
+            c3.metric("Comentarios totales", int(pub_pdf["comentarios"].sum()))
+            c4.metric("Reacciones totales", int(pub_pdf["reacciones"].sum()))
+
+            top_engagement = pub_pdf.sort_values("engagement_por_post", ascending=False).head(10)
+            fig = px.bar(top_engagement, x="engagement_por_post", y="barbero", orientation="h",
+                         title="Top 10 barberos por engagement (comentarios + reacciones / post)",
+                         color="engagement_por_post", color_continuous_scale=[[0, "#333"], [1, GOLD]])
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig, use_container_width=True)
+
+            citas_barbero = pdf[pdf["estado"] == "completada"].groupby("barbero").size().reset_index(name="citas_completadas")
+            cruce = pub_pdf.merge(citas_barbero, on="barbero", how="left").fillna({"citas_completadas": 0})
+            fig2 = px.scatter(cruce, x="engagement_por_post", y="citas_completadas", text="barbero",
+                              title="Engagement vs volumen de citas completadas",
+                              color="engagement_por_post", color_continuous_scale=[[0, "#333"], [1, PURPLE]])
+            fig2.update_traces(textposition="top center", textfont_color="white")
+            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", coloraxis_showscale=False)
+            st.plotly_chart(fig2, use_container_width=True)
+
+            correlacion = cruce[["engagement_por_post", "citas_completadas"]].corr().iloc[0, 1] if len(cruce) >= 3 else None
+            n_sin_posts = pdf["barbero"].nunique() - len(pub_pdf)
+            if correlacion is not None:
+                st.info(f"Correlación engagement vs citas completadas: {correlacion:.2f}. "
+                        f"{n_sin_posts} barbero(s) sin ninguna publicación todavía.",
+                        icon=":material/info:")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 7 — REGRESIÓN

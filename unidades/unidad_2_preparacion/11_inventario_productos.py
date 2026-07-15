@@ -43,7 +43,7 @@ else:
 print("\n" + "=" * 60)
 print("ANÁLISIS DE MÁRGENES (solo productos de venta al cliente)")
 print("=" * 60)
-venta = productos[productos["tipo"] == "venta_cliente"].sort_values("margen_pct", ascending=False)
+venta = productos[productos["tipo"] == "venta"].sort_values("margen_pct", ascending=False)
 print(venta[["producto", "precio_compra", "precio_venta", "margen", "margen_pct"]].to_string(index=False))
 
 print(f"\nMargen promedio (venta al cliente): {venta['margen_pct'].mean():.1f}%")

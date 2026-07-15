@@ -109,12 +109,12 @@ unida a `DIM_CLIENTE` por `client_id`.
 
 ### Dimensión nueva: `DIM_HORARIO`
 Atributos: `dia_semana` (convertido de convención Laravel 0=Domingo a ISO 1=Lunes),
-`horas_disponibles`, `is_working`. Colección origen: `barber_schedules` (175 = 25
+`horas_disponibles`, `is_working`. Colección origen: `barber_schedules` (350 = 50
 barberos × 7 días). Se cruza contra `HECHOS_CITAS` (agregadas por barbero/día) para
 calcular la tasa de utilización real — ver `10_utilizacion_barberos.py`.
 
 ### Dimensión independiente: `DIM_PRODUCTO`
-Atributos: `producto`, `categoria`, `tipo` (`insumo_trabajo`/`venta_cliente`),
+Atributos: `producto`, `categoria`, `tipo` (`uso_interno`/`venta`),
 `precio_compra`, `precio_venta`, `stock_actual`, `stock_minimo`. Colección origen:
 `products` (31 documentos). No tiene tabla de hechos propia en el modelo actual porque
 `inventory_movements` (el registro de consumo que la conectaría con `HECHOS_CITAS`)
