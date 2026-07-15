@@ -13,7 +13,17 @@ Colecciones unidas (JOIN en memoria con PyMongo):
 IMPORTANTE (compatibilidad):
     get_spark_session() sigue devolviendo (spark, df, df_vector) con las MISMAS
     columnas originales — los scripts 01–07 no se rompen. Solo se AGREGAN columnas
-    nuevas (cliente, nivel, categoria, hora, dia_semana, mes, edad_cliente…).
+    nuevas (cliente, nivel, categoria, hora, dia_semana, mes, edad_cliente,
+    es_no_asistio, es_perdida).
+
+Actualizacion (maquina de estados + tienda + social):
+    - ESTADOS_VALIDOS ahora tiene 6 estados (agrega en_proceso, no_asistio).
+      es_cancelada se mantiene estricto por compatibilidad; es_perdida (nuevo)
+      cubre cancelada+no_asistio para "ingreso perdido" real.
+    - get_pedidos_df() / get_top_productos_df(): coleccion `orders` (tienda).
+    - get_publicaciones_df(): colecciones `works/work_images/comments/
+      reactions` (muro de inspiracion) — antes documentadas como vacias,
+      ya no lo estan.
 
 Equipo : Equipo UrbanBlade — UTVT IDGS-93
 Materia: Extracción del conocimiento en bases de datos — MGTI. Héctor Velázquez Estrada
@@ -35,8 +45,9 @@ import pandas as pd
 # ─────────────────────────────────────────────────────────────────────────────
 # Constantes reutilizables por todos los scripts (una sola fuente de verdad)
 # ─────────────────────────────────────────────────────────────────────────────
-ESTADOS_VALIDOS   = ["cancelada", "completada", "confirmada", "pendiente"]
-ESTADOS_PERDIDA   = ["cancelada"]          # estados que representan ingreso perdido
+ESTADOS_VALIDOS   = ["cancelada", "completada", "confirmada", "en_proceso", "no_asistio", "pendiente"]
+ESTADOS_PERDIDA   = ["cancelada", "no_asistio"]  # estados que representan ingreso perdido
+ESTADOS_TERMINALES = ["completada", "cancelada", "no_asistio"]  # ya no cambian de estado
 CATEGORIAS        = ["barba", "combo", "corte", "tratamiento"]
 DIAS_SEMANA       = {1: "Lunes", 2: "Martes", 3: "Miércoles", 4: "Jueves",
                      5: "Viernes", 6: "Sábado", 7: "Domingo"}
@@ -199,7 +210,16 @@ def _extract_records(db):
             "hora":         _hora_int(apt.get("hora_inicio")),
             # ── operativo ────────────────────────────────────────────────────
             "metodo_pago":  str(apt.get("metodo_pago", "efectivo")),
+            # es_cancelada: se conserva estricto (solo "cancelada") por
+            # compatibilidad con scripts 01-07 que ya lo usan como target.
             "es_cancelada": 1 if estado == "cancelada" else 0,
+            # es_no_asistio / es_perdida: nuevos — la maquina de estados real
+            # tiene 6 estados (agrega en_proceso y no_asistio); un no-show es
+            # ingreso perdido igual que una cancelacion, pero es un fenomeno
+            # distinto (cliente no avisa vs. cancela con antelacion) y por eso
+            # se modela aparte en vez de fusionarlo dentro de es_cancelada.
+            "es_no_asistio": 1 if estado == "no_asistio" else 0,
+            "es_perdida":   1 if estado in ESTADOS_PERDIDA else 0,
             "client_id":    str(apt.get("client_id", "")),
         })
 
@@ -265,6 +285,8 @@ def get_spark_session():
         col("estado").cast("string"),
         col("ingreso").cast("double"),
         col("es_cancelada").cast("int"),
+        col("es_no_asistio").cast("int"),
+        col("es_perdida").cast("int"),
         col("fecha").cast("string"),
         col("anio").cast("int"),
         col("mes").cast("int"),
@@ -493,7 +515,11 @@ def get_productos_df():
         rows.append({
             "producto":      p.get("nombre", "Sin nombre"),
             "categoria":     str(p.get("categoria", "otros")),
-            "tipo":          str(p.get("tipo", "insumo_trabajo")),
+            # valores reales en `products.tipo`: "venta" (venta al cliente) /
+            # "uso_interno" (insumo de trabajo, no se vende). Antes se
+            # comparaba contra "venta_cliente"/"insumo_trabajo" (nunca
+            # coincidian con ningun documento real).
+            "tipo":          str(p.get("tipo", "uso_interno")),
             "precio_compra": precio_compra,
             "precio_venta":  precio_venta,
             "margen":        round(precio_venta - precio_compra, 2),
@@ -504,6 +530,145 @@ def get_productos_df():
         })
     client.close()
     return pd.DataFrame(rows)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: PEDIDOS DE TIENDA (colección `orders`) — carrito/checkout de productos
+# ─────────────────────────────────────────────────────────────────────────────
+def get_pedidos_df(spark):
+    """Una fila por pedido de tienda. `tipo` distingue:
+        'cita'   → add-on de producto comprado dentro de la reserva de una cita
+        'tienda' → compra suelta en la tienda del cliente
+
+    `items` es un array embebido de Mongo (nombre, cantidad, precio, subtotal
+    por producto); aquí se resume a num_items/num_unidades por pedido — el
+    detalle producto-por-producto no hace falta para los análisis agregados
+    (ingresos, attach-rate, top productos se calculan aparte, ver punto 2).
+    """
+    client, database = _connect_db()
+    db = client[database]
+    clients_map = {str(c["_id"]): c for c in db["clients"].find({}, {"_id": 1, "user_id": 1, "nivel": 1})}
+    users_map   = {str(u["_id"]): u for u in db["users"].find({}, {"_id": 1, "name": 1})}
+
+    pedidos = list(db["orders"].find(
+        {}, {"_id": 0, "folio": 1, "client_id": 1, "tipo": 1, "estado": 1,
+             "total": 1, "items": 1, "metodo_pago": 1, "appointment_id": 1,
+             "entregado_en": 1, "created_at": 1}))
+    client.close()
+
+    records = []
+    for p in pedidos:
+        cli = clients_map.get(str(p.get("client_id", "")), {})
+        uid = str(cli.get("user_id", ""))
+        items = p.get("items") or []
+        fdt = _to_dt(p.get("created_at"))
+        records.append({
+            "folio":        str(p.get("folio", "")),
+            "cliente":      users_map.get(uid, {}).get("name", "Cliente"),
+            "nivel":        str(cli.get("nivel", "regular")),
+            "tipo":         str(p.get("tipo", "tienda")),
+            "estado":       str(p.get("estado", "pendiente")),
+            "total":        _num(p.get("total")),
+            "num_items":    len(items),
+            "num_unidades": sum(_num(it.get("cantidad"), 0) for it in items),
+            "metodo_pago":  str(p.get("metodo_pago") or "sin_definir"),
+            "es_addon_cita": 1 if p.get("appointment_id") else 0,
+            "entregado":    1 if p.get("entregado_en") else 0,
+            "mes":          fdt.month if fdt else 0,
+            "anio":         fdt.year if fdt else 0,
+        })
+
+    pdf = pd.DataFrame(records)
+    return spark.createDataFrame(pdf) if len(pdf) else None
+
+
+def get_top_productos_df():
+    """DataFrame pandas (una fila por producto vendido) explotando el array
+    `items` de todos los pedidos entregados — para ranking de productos top.
+    Aparte de `get_pedidos_df` porque el nivel de detalle es distinto
+    (producto, no pedido)."""
+    client, database = _connect_db()
+    db = client[database]
+    rows = []
+    for p in db["orders"].find({"estado": "entregado"}, {"_id": 0, "items": 1, "tipo": 1}):
+        for it in (p.get("items") or []):
+            rows.append({
+                "producto":  str(it.get("nombre", "Desconocido")),
+                "cantidad":  _num(it.get("cantidad"), 0),
+                "subtotal":  _num(it.get("subtotal"), 0),
+                "tipo_pedido": str(p.get("tipo", "tienda")),
+            })
+    client.close()
+    return pd.DataFrame(rows)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: PUBLICACIONES SOCIALES (colecciones `works`, `work_images`,
+# `comments`, `reactions`) — engagement del muro de inspiración por barbero.
+#
+# NOTA: en el snapshot original del proyecto estas colecciones estaban vacías
+# y se documentaron como "NO usar"; ya no es el caso (contenido real sembrado),
+# asi que se agrega este helper nuevo en vez de reactivar el aviso obsoleto.
+# ─────────────────────────────────────────────────────────────────────────────
+def get_publicaciones_df(spark):
+    """Una fila por barbero con sus métricas de engagement en el muro.
+
+    `Work.barbero_id` referencia `users._id` directamente (no `barbers._id`),
+    a diferencia del resto del esquema donde las citas pasan por `barbers`.
+    """
+    client, database = _connect_db()
+    db = client[database]
+    users_map = {str(u["_id"]): u for u in db["users"].find({}, {"_id": 1, "name": 1})}
+
+    works = list(db["works"].find({}, {"_id": 1, "barbero_id": 1}))
+    work_ids = [str(w["_id"]) for w in works]
+    barbero_por_work = {str(w["_id"]): str(w.get("barbero_id", "")) for w in works}
+
+    imagenes_por_work = {}
+    for img in db["work_images"].find({}, {"work_id": 1}):
+        wid = str(img.get("work_id", ""))
+        imagenes_por_work[wid] = imagenes_por_work.get(wid, 0) + 1
+
+    comentarios_por_work, suma_rating_por_work = {}, {}
+    for c in db["comments"].find({}, {"work_id": 1, "rating": 1}):
+        wid = str(c.get("work_id", ""))
+        comentarios_por_work[wid] = comentarios_por_work.get(wid, 0) + 1
+        suma_rating_por_work[wid] = suma_rating_por_work.get(wid, 0) + _num(c.get("rating"), 0)
+
+    reacciones_por_work = {}
+    for r in db["reactions"].find({}, {"work_id": 1}):
+        wid = str(r.get("work_id", ""))
+        reacciones_por_work[wid] = reacciones_por_work.get(wid, 0) + 1
+    client.close()
+
+    agg = {}
+    for wid in work_ids:
+        bid = barbero_por_work.get(wid, "")
+        a = agg.setdefault(bid, {
+            "publicaciones": 0, "fotos": 0, "comentarios": 0,
+            "suma_rating": 0.0, "reacciones": 0,
+        })
+        a["publicaciones"] += 1
+        a["fotos"]         += imagenes_por_work.get(wid, 0)
+        a["comentarios"]   += comentarios_por_work.get(wid, 0)
+        a["suma_rating"]   += suma_rating_por_work.get(wid, 0.0)
+        a["reacciones"]    += reacciones_por_work.get(wid, 0)
+
+    records = []
+    for bid, a in agg.items():
+        records.append({
+            "barbero":       users_map.get(bid, {}).get("name", "Sin nombre"),
+            "publicaciones": a["publicaciones"],
+            "fotos":         a["fotos"],
+            "comentarios":   a["comentarios"],
+            "rating_promedio": round(a["suma_rating"] / a["comentarios"], 2) if a["comentarios"] else 0.0,
+            "reacciones":    a["reacciones"],
+            "engagement_por_post": round((a["comentarios"] + a["reacciones"]) / a["publicaciones"], 2)
+                                    if a["publicaciones"] else 0.0,
+        })
+
+    pdf = pd.DataFrame(records)
+    return spark.createDataFrame(pdf) if len(pdf) else None
 
 
 # ─────────────────────────────────────────────────────────────────────────────

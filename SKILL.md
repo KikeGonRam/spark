@@ -45,25 +45,30 @@ MongoDB Atlas, procesa datos y alimenta dashboards Streamlit.
 
 ```
 appointments  → _id, service_id, barber_id, client_id, precio_cobrado,
-                estado (pendiente|confirmada|completada|cancelada),   ← SOLO 4 estados reales
+                estado (pendiente|confirmada|en_proceso|completada|cancelada|no_asistio),  ← 6 estados reales
                 fecha (UTCDateTime), hora_inicio, hora_fin, metodo_pago, code
 
 services      → _id, nombre, categoria (barba|combo|corte|tratamiento), duracion_min, precio, activo
 barbers       → _id, user_id, activo   ← NO tiene campo 'nombre': se resuelve por user_id → users.name
 users         → _id, name, email, role_id
 clients       → _id, user_id, nivel (regular|vip), puntos, total_citas, fecha_nacimiento
-payments      → _id, appointment_id, monto, propina (=0 en datos actuales), metodo_pago,
-                created_by, comprobante_pdf   ← 11,016 docs, TODAS las citas completadas tienen pago
-loyalty_transactions → _id, client_id, puntos, tipo (solo "ganado", sin canjes aún)  ← 11,016 docs
+payments      → _id, appointment_id, monto, propina, metodo_pago,
+                created_by, comprobante_pdf   ← una por cada cita completada
+loyalty_transactions → _id, client_id, puntos, tipo (solo "ganado", sin canjes aún)
 barber_schedules → _id, barber_id, day_of_week (Laravel 0=Dom..6=Sáb), start_time, end_time,
-                is_working   ← 175 docs = 25 barberos × 7 días
-products      → _id, nombre, categoria, tipo (insumo_trabajo|venta_cliente),
+                is_working   ← 350 docs = 50 barberos × 7 días
+products      → _id, nombre, categoria, tipo (uso_interno|venta),
                 precio_compra, precio_venta (ambos BSON Decimal128 ← usar _num(), NO float() directo),
                 stock_actual, stock_minimo   ← 31 docs
 barbershop_settings → _id, horario_apertura, horario_cierre, politica_cancelacion  ← 1 doc
+orders        → _id, folio, tipo (cita|tienda), estado (pendiente|entregado|cancelado), total,
+                metodo_pago, items[] (nombre, cantidad, subtotal)  ← add-ons de cita y compras sueltas
+works / work_images → _id, barbero_id (referencia directa a users._id, NO a barbers._id), titulo,
+                descripcion, work_date / imagenes  ← portafolio social por barbero
+comments / reactions → _id, work_id, user_id, ...  ← engagement del muro de inspiración
 
   Vacías en la BD actual (NO usar): service_combos, combo_service, inventories,
-  inventory_movements, works, saved_works, work_images, raffle_results, comments, reactions
+  inventory_movements, saved_works, raffle_results
 ```
 
 > **Schema real verificado** (12,535 citas, 1000 clientes, 25 barberos):
@@ -84,10 +89,14 @@ barbershop_settings → _id, horario_apertura, horario_cierre, politica_cancelac
 > - `get_horarios_df()` → horas disponibles por barbero/día (pandas, sin Spark)
 > - `get_utilizacion_barberos_df(df_pandas)` → % utilización real por barbero/día
 > - `get_productos_df()` → inventario con márgenes y alertas de reorden (pandas, sin Spark)
-> - `_num(v)` → convierte BSON Decimal128 a float (usar SIEMPRE con `products.precio_*`)
+> - `get_pedidos_df(spark)` → un pedido por fila (`orders`, tipo cita/tienda, estado, total)
+> - `get_top_productos_df()` → explode de `items[]` de pedidos entregados, agregado por producto (pandas)
+> - `get_publicaciones_df(spark)` → engagement por barbero (`works`+`work_images`+`comments`+`reactions`)
+> - `_num(v)` → convierte BSON Decimal128 a float (usar SIEMPRE con `products.precio_*` e `items[].subtotal`)
 > - `FEATURES_BASE = ["duracion_min","precio","ingreso"]` (compatibilidad)
 > - `FEATURES_CANCEL = ["duracion_min","precio","hora","dia_semana","mes"]` (clasificación honesta)
-> - `ESTADOS_VALIDOS`, `CATEGORIAS`, `DIAS_SEMANA`, `MESES`
+> - `ESTADOS_VALIDOS` (6 estados), `ESTADOS_PERDIDA = ["cancelada","no_asistio"]`,
+>   `ESTADOS_TERMINALES = ["completada","cancelada","no_asistio"]`, `CATEGORIAS`, `DIAS_SEMANA`, `MESES`
 >
 > **Sin fuga de datos (leakage)**: como `ingreso == precio`, NUNCA se predice `ingreso`
 > usando `precio` como feature. La regresión (03) predice la **facturación diaria**;
@@ -1018,8 +1027,8 @@ streamlit run analytics/dashboard_pca.py
 3. **Variables .env**: 5 variables separadas (`MONGO_USER`, `MONGO_PASSWORD`, `MONGO_CLUSTER`, `MONGO_DB`, `MONGO_COLLECTION`). NUNCA una sola `MONGO_URI`.
 4. **Leer MongoDB**: configurar database/collection en `SparkSession.builder`, luego `spark.read.format("mongodb").load()` sin opciones extra.
 5. **get_spark_session()** siempre devuelve `(spark, df, df_vector)` — desempaquetar con `spark, df, df_vector = get_spark_session()`.
-6. **ingreso = cantidad * precio** — esta es la columna derivada principal, igual que el profesor.
-7. **features** = siempre `["cantidad", "precio", "ingreso"]` con `VectorAssembler` y `handleInvalid="skip"`.
+6. **NO usar `cantidad`** — ese campo no existe en `appointments` de barber_db. `ingreso = precio_cobrado` de la cita (sin descuentos ni multiplicador de cantidad).
+7. **features** = `FEATURES_BASE`/`FEATURES_CANCEL` exportados por `mongo_spark_conexion_sinnulos.py` (duración/precio/hora/día/mes), NUNCA `cantidad`.
 8. **Dashboards**: Streamlit + Plotly (NO matplotlib standalone para dashboards interactivos).
 9. **PCA/KMeans**: SIEMPRE aplicar `StandardScaler` antes de PCA.
 10. **Red Neuronal**: Spark procesa y escala → convertir a Pandas → entrenar con PyTorch.
