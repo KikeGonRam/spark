@@ -62,6 +62,7 @@ Materia : Extracción del conocimiento en bases de datos — MGTI. Héctor Velá
 import sys
 import os
 from datetime import datetime, timezone
+import pandas as pd
 
 _ROOT = os.path.abspath(__file__)
 while _ROOT != os.path.dirname(_ROOT) and not os.path.isdir(os.path.join(_ROOT, "config")):
@@ -77,7 +78,7 @@ from pyspark.sql.functions import collect_set, size
 from config.mongo_spark_conexion_sinnulos import (
     get_spark_session, get_clientes_df, get_pagos_df, get_loyalty_df,
     get_horarios_df, get_utilizacion_barberos_df, get_productos_df,
-    get_pedidos_df, get_top_productos_df, _connect_db, DIAS_SEMANA,
+    get_pedidos_df, get_top_productos_df, _connect_db, DIAS_SEMANA, MESES,
 )
 
 print("\n" + "=" * 70)
@@ -92,10 +93,17 @@ insights = []
 
 
 def agregar(tipo, unidad, roles, titulo, mensaje, valor_destacado, color,
-            barbero_user_id=None, barbero_perfil_id=None):
+            barbero_user_id=None, barbero_perfil_id=None, grafica=None):
     """Arma un documento de insight con el formato descrito arriba y lo
     agrega a la lista `insights`. Centralizar esto en una función evita
-    repetir la misma estructura de diccionario 13 veces distintas."""
+    repetir la misma estructura de diccionario 13 veces distintas.
+
+    `grafica` (opcional): dict con los datos YA LISTOS para que Laravel los
+    pinte con Chart.js, sin que la vista tenga que volver a calcular nada.
+    Formato: {"tipo": "bar"|"doughnut"|"line", "labels": [...], "valores": [...]}
+    Se deja vacío (None) en los insights que son solo un dato/frase, sin
+    suficiente detalle detrás como para justificar una gráfica.
+    """
     insights.append({
         "tipo": tipo,
         "unidad": unidad,
@@ -106,9 +114,10 @@ def agregar(tipo, unidad, roles, titulo, mensaje, valor_destacado, color,
         "mensaje": mensaje,
         "valor_destacado": valor_destacado,
         "color": color,
+        "grafica": grafica,
         "generado_en": datetime.now(timezone.utc),
     })
-    print(f"  + [{unidad}] {tipo} -> {titulo}")
+    print(f"  + [{unidad}] {tipo} -> {titulo}" + (" (con gráfica)" if grafica else ""))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -144,6 +153,20 @@ total_citas = df.count()
 ingreso_total = df.filter(col("estado") == "completada").agg(ssum("ingreso")).first()[0] or 0.0
 print(f"\nTotal citas históricas: {total_citas} | Ingreso histórico: ${ingreso_total:,.0f}")
 
+# Ingreso de los últimos 6 meses con datos (año+mes reales) — para dibujar
+# la tendencia en una gráfica de línea en vez de solo el número total.
+por_mes = (df.filter((col("estado") == "completada") & (col("anio") > 0) & (col("mes") > 0))
+             .groupBy("anio", "mes").agg(ssum("ingreso").alias("ingreso"))
+             .orderBy(col("anio").desc(), col("mes").desc()).limit(6).toPandas()
+             .sort_values(["anio", "mes"]))
+grafica_resumen = None
+if len(por_mes):
+    grafica_resumen = {
+        "tipo": "line",
+        "labels": [f"{MESES.get(int(r['mes']), '')[:3]} {int(r['anio'])}" for _, r in por_mes.iterrows()],
+        "valores": [round(float(r["ingreso"]), 0) for _, r in por_mes.iterrows()],
+    }
+
 agregar(
     tipo="resumen_ejecutivo", unidad="II",
     roles=["administrador"],
@@ -152,6 +175,7 @@ agregar(
              f"y ha facturado un total de ${ingreso_total:,.0f} MXN en servicios completados."),
     valor_destacado=f"${ingreso_total:,.0f}",
     color="gold",
+    grafica=grafica_resumen,
 )
 
 
@@ -173,6 +197,17 @@ por_dia = (df.filter(col("dia_semana") > 0)
 hora_pico = int(por_hora["hora"]) if por_hora else 10
 dia_pico_nombre = DIAS_SEMANA.get(int(por_dia["dia_semana"]), "sábado") if por_dia else "sábado"
 
+# Distribución completa por hora del día (08:00-21:00) — la gráfica de barras
+# que acompaña al hallazgo de "hora pico" en la nueva página de Analítica.
+horas_pdf = (df.filter((col("hora") >= 8) & (col("hora") <= 21))
+               .groupBy("hora").agg(count("*").alias("citas"))
+               .orderBy("hora").toPandas())
+grafica_demanda = {
+    "tipo": "bar",
+    "labels": [f"{int(h):02d}:00" for h in horas_pdf["hora"]],
+    "valores": [int(c) for c in horas_pdf["citas"]],
+} if len(horas_pdf) else None
+
 agregar(
     tipo="demanda_horas_pico", unidad="III",
     roles=["administrador", "recepcionista", "barbero"],
@@ -182,6 +217,7 @@ agregar(
              "horario y evitar programar descansos justo ahí."),
     valor_destacado=f"{dia_pico_nombre} {hora_pico:02d}:00",
     color="warning",
+    grafica=grafica_demanda,
 )
 
 # ── Predicción de demanda, versión "para el propio barbero" ─────────────────
@@ -235,11 +271,17 @@ clientes_df = get_clientes_df(spark, df).cache()
 percentil_70 = clientes_df.approxQuantile("dias_sin_cita", [0.7], 0.05)[0]
 en_riesgo = clientes_df.filter(col("dias_sin_cita") > percentil_70).count()
 total_clientes_activos = clientes_df.count()
+grafica_churn = {
+    "tipo": "doughnut",
+    "labels": ["En riesgo", "Activos"],
+    "valores": [en_riesgo, max(total_clientes_activos - en_riesgo, 0)],
+}
 
 agregar(
     tipo="clientes_en_riesgo", unidad="III",
     roles=["administrador", "recepcionista"],
     titulo="Clientes que podrían dejar de venir",
+    grafica=grafica_churn,
     mensaje=(f"{en_riesgo} de {total_clientes_activos} clientes llevan más tiempo del "
              "habitual sin agendar una cita. Vale la pena contactarlos con una promoción "
              "de reactivación antes de perderlos por completo."),
@@ -258,16 +300,33 @@ segmentos = KMeans(k=4, seed=42, featuresCol="features").fit(df_seg).transform(d
 
 # El cluster de mayor gasto_total promedio se etiqueta como "VIP" — igual que
 # en el script 03_segmentacion_clientes.py, para no inventar una regla nueva.
+# (mismo criterio de etiquetado: 1º gasto=VIP, 2º gasto=Alto consumo, el de
+# mayor recencia entre los 2 restantes=Inactivo, el último=Frecuente)
 stats_cluster = (segmentos.groupBy("prediction")
-                  .agg(count("*").alias("clientes"), sround(avg("gasto_total"), 0).alias("gasto_prom"))
+                  .agg(count("*").alias("clientes"),
+                       sround(avg("gasto_total"), 0).alias("gasto_prom"),
+                       sround(avg("dias_sin_cita"), 0).alias("dias_prom"))
                   .orderBy(col("gasto_prom").desc()).toPandas())
 vip_row = stats_cluster.iloc[0] if len(stats_cluster) else None
 
-if vip_row is not None:
+if vip_row is not None and len(stats_cluster) >= 4:
+    etiquetas = ["VIP", "Alto consumo"]
+    restantes = stats_cluster.iloc[2:].sort_values("dias_prom", ascending=False)
+    etiquetas_restantes = ["Inactivo", "Frecuente"]
+    orden_final = pd.concat([stats_cluster.iloc[:2], restantes]).reset_index(drop=True)
+    nombres_segmento = etiquetas + etiquetas_restantes
+
+    grafica_segmentos = {
+        "tipo": "doughnut",
+        "labels": nombres_segmento,
+        "valores": [int(c) for c in orden_final["clientes"]],
+    }
+
     agregar(
         tipo="segmentacion_clientes", unidad="IV",
         roles=["administrador", "recepcionista"],
         titulo="Tus clientes más valiosos",
+        grafica=grafica_segmentos,
         mensaje=(f"{int(vip_row['clientes'])} clientes forman tu segmento de mayor gasto "
                  f"(en promedio ${vip_row['gasto_prom']:,.0f} cada uno). Son los mejores "
                  "candidatos para un trato preferencial o un descuento exclusivo."),
@@ -326,13 +385,31 @@ distrib = resultado_citas.groupBy("cluster").count().toPandas().set_index("clust
 
 ingresos_centro = [c[2] for c in centros]
 idx_premium = ingresos_centro.index(max(ingresos_centro))
+idx_basico = ingresos_centro.index(min(ingresos_centro))
 citas_premium = int(distrib.get(idx_premium, 0))
 pct_premium = round(citas_premium / total_citas * 100, 1) if total_citas else 0
+
+# Etiqueta los 3 clusters por nivel de ingreso (igual criterio que
+# unidad_4_no_supervisado/01_kmeans.py) para la gráfica de distribución.
+nombres_cluster = {}
+for i in range(len(centros)):
+    if i == idx_premium:
+        nombres_cluster[i] = "Premium"
+    elif i == idx_basico:
+        nombres_cluster[i] = "Básico"
+    else:
+        nombres_cluster[i] = "Estándar"
+grafica_perfiles = {
+    "tipo": "doughnut",
+    "labels": [nombres_cluster[i] for i in distrib.index],
+    "valores": [int(v) for v in distrib.values],
+}
 
 agregar(
     tipo="perfil_citas_premium", unidad="IV",
     roles=["administrador"],
     titulo="Servicios premium: pocos pero valiosos",
+    grafica=grafica_perfiles,
     mensaje=(f"Solo el {pct_premium}% de las citas son de tipo premium (alto precio y "
              "duración), pero generan un ingreso desproporcionado a su frecuencia — "
              "son un buen candidato para promocionar activamente."),
@@ -354,11 +431,18 @@ if len(utilizacion):
                .sort_values("utilizacion_prom", ascending=False))
     prom_equipo = round(ranking["utilizacion_prom"].mean(), 1)
     sobrecargados = int((ranking["utilizacion_prom"] > 80).sum())
+    top10 = ranking.head(10)
+    grafica_utilizacion = {
+        "tipo": "bar",
+        "labels": list(top10.index),
+        "valores": [round(float(v), 1) for v in top10["utilizacion_prom"]],
+    }
 
     agregar(
         tipo="utilizacion_equipo", unidad="II",
         roles=["administrador", "recepcionista"],
         titulo="Qué tan ocupada está la plantilla de barberos",
+        grafica=grafica_utilizacion,
         mensaje=(f"En promedio, el equipo de barberos usa el {prom_equipo}% de sus horas "
                  f"disponibles. {sobrecargados} barbero(s) están por encima del 80% de "
                  "utilización — riesgo de saturación si sigue creciendo la demanda."),
@@ -419,10 +503,16 @@ if loy_df is not None:
     reg_prom = por_nivel[por_nivel["nivel"] == "regular"]["prom"]
     if len(vip_prom) and len(reg_prom) and float(reg_prom.iloc[0]) > 0:
         ratio = round(float(vip_prom.iloc[0]) / float(reg_prom.iloc[0]), 1)
+        grafica_fidelizacion = {
+            "tipo": "bar",
+            "labels": [str(n).upper() for n in por_nivel["nivel"]],
+            "valores": [round(float(p), 0) for p in por_nivel["prom"]],
+        }
         agregar(
             tipo="fidelizacion_ratio", unidad="II",
             roles=["administrador"],
             titulo="El programa de puntos sí funciona",
+            grafica=grafica_fidelizacion,
             mensaje=(f"Los clientes VIP acumulan en promedio {ratio}x más puntos que los "
                      "regulares — confirma que el programa de lealtad refleja bien el "
                      "consumo real de cada cliente."),
@@ -460,14 +550,22 @@ if pedidos_df is not None:
 
     top = get_top_productos_df()
     producto_top = None
+    grafica_tienda = None
     if len(top):
         resumen = top.groupby("producto").agg(unidades=("cantidad", "sum")).sort_values("unidades", ascending=False)
         producto_top = resumen.index[0] if len(resumen) else None
+        top5 = resumen.head(5)
+        grafica_tienda = {
+            "tipo": "bar",
+            "labels": list(top5.index),
+            "valores": [round(float(v), 0) for v in top5["unidades"]],
+        }
 
     agregar(
         tipo="tienda_pedidos", unidad="II",
         roles=["administrador", "recepcionista"],
         titulo="Cómo vende la tienda de productos",
+        grafica=grafica_tienda,
         mensaje=(f"El {pct_addon:.0f}% del ingreso de tienda viene de productos añadidos "
                  "dentro de una reserva, no de compras sueltas — ofrecerlos al momento de "
                  "agendar convierte mejor que esperar a que el cliente entre a la tienda."
@@ -503,15 +601,25 @@ for wid in work_ids:
     a["reacciones"] += reacciones_por_work.get(wid, 0)
 
 if agg_social:
-    mejor_bid, mejor = max(
+    ranking_social = sorted(
         agg_social.items(),
-        key=lambda kv: (kv[1]["comentarios"] + kv[1]["reacciones"]) / max(kv[1]["publicaciones"], 1)
+        key=lambda kv: (kv[1]["comentarios"] + kv[1]["reacciones"]) / max(kv[1]["publicaciones"], 1),
+        reverse=True,
     )
+    mejor_bid, mejor = ranking_social[0]
     mejor_nombre = users_map.get(mejor_bid, {}).get("name", "Un barbero")
+    top5_social = ranking_social[:5]
+    grafica_social = {
+        "tipo": "bar",
+        "labels": [users_map.get(bid, {}).get("name", "?") for bid, _ in top5_social],
+        "valores": [round((a["comentarios"] + a["reacciones"]) / max(a["publicaciones"], 1), 1)
+                    for _, a in top5_social],
+    }
     agregar(
         tipo="engagement_muro_top", unidad="II",
         roles=["administrador"],
         titulo="El barbero con más interacción en el muro",
+        grafica=grafica_social,
         mensaje=(f"{mejor_nombre} es quien más comentarios y reacciones genera por "
                  "publicación — vale la pena pedirle consejos de qué tipo de foto funciona mejor."),
         valor_destacado=mejor_nombre,
