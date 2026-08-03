@@ -380,20 +380,43 @@ if train_cancel.select("label").distinct().count() > 1 and test_cancel.select("l
         "duracion_min": "Duración del servicio", "precio": "Importe del servicio",
         "hora": "Horario", "dia_semana": "Día de la semana", "mes": "Mes",
     }
-    grafica_factores = {
-        "tipo": "bar",
-        "labels": [nombres_factores.get(nombre, nombre) for nombre, _ in sorted(zip(FEATURES_CANCEL, importancia_arbol), key=lambda item: -item[1])],
-        "valores": [round(float(valor) * 100, 1) for _, valor in sorted(zip(FEATURES_CANCEL, importancia_arbol), key=lambda item: -item[1])],
-    }
+
+    # Si el árbol no encontró ninguna división útil (todas las importancias
+    # ~0), no tiene sentido mostrar una gráfica de barras vacía como si fuera
+    # un resultado — eso se ve como un bug en vez de reflejar honestamente
+    # que no hay señal predictiva clara (mismo criterio que
+    # "clasificacion_cancelacion" más arriba: no inflar ni disimular un
+    # modelo que en la práctica no encontró nada que anticipar).
+    sin_senal_clara = peso_arbol < 0.01
+    if sin_senal_clara:
+        mensaje_alertas = (
+            "El sistema intentó encontrar patrones que anticipen una cancelación "
+            "(horario, duración, precio, día, mes), pero no halló ninguna combinación "
+            "que distinga con claridad una cita que se cancela de una que no. En la "
+            "práctica, esto significa que las cancelaciones no dependen de esos "
+            "factores — conviene reforzar los recordatorios de forma pareja en vez de "
+            "enfocarse en horarios o servicios específicos."
+        )
+        grafica_factores = None
+    else:
+        grafica_factores = {
+            "tipo": "bar",
+            "labels": [nombres_factores.get(nombre, nombre) for nombre, _ in sorted(zip(FEATURES_CANCEL, importancia_arbol), key=lambda item: -item[1])],
+            "valores": [round(float(valor) * 100, 1) for _, valor in sorted(zip(FEATURES_CANCEL, importancia_arbol), key=lambda item: -item[1])],
+        }
+        mensaje_alertas = (
+            f"El sistema identifica señales de posible cancelación con una confiabilidad de "
+            f"{auc_arbol * 100:.0f}%. El factor con mayor peso es {nombres_factores.get(factor_arbol, factor_arbol).lower()}. "
+            "Usa esta alerta para confirmar con anticipación, no para cancelar citas automáticamente."
+        )
+
     agregar(
         tipo="alertas_cancelacion", unidad="III",
         roles=["administrador", "recepcionista"],
         titulo="Alertas para confirmar citas",
-        mensaje=(f"El sistema identifica señales de posible cancelación con una confiabilidad de "
-                 f"{auc_arbol * 100:.0f}%. El factor con mayor peso es {nombres_factores.get(factor_arbol, factor_arbol).lower()}. "
-                 "Usa esta alerta para confirmar con anticipación, no para cancelar citas automáticamente."),
-        valor_destacado=f"{auc_arbol * 100:.0f}% de confiabilidad",
-        color="warning" if auc_arbol >= 0.65 else "info",
+        mensaje=mensaje_alertas,
+        valor_destacado="Sin señal clara" if sin_senal_clara else f"{auc_arbol * 100:.0f}% de confiabilidad",
+        color="info" if sin_senal_clara else ("warning" if auc_arbol >= 0.65 else "info"),
         grafica=grafica_factores,
     )
 
@@ -497,7 +520,17 @@ df_ok = df.filter(col("estado").isin("completada", "confirmada")).filter(col("cl
 df_tx = (df_ok.groupBy("client_id").agg(collect_set("servicio").alias("items"))
               .filter(size(col("items")) >= 1))
 fp_model = FPGrowth(itemsCol="items", minSupport=0.10, minConfidence=0.20).fit(df_tx)
-reglas = fp_model.associationRules.orderBy(col("lift").desc()).limit(1).toPandas()
+# Con minSupport bajo, la regla de MAYOR lift a veces tiene un antecedente
+# gigante (ej. "si pediste estos 14 servicios..."), porque casi cualquier
+# cliente frecuente termina probando la mayoría del catálogo. Es correcta
+# matemáticamente pero inútil como recomendación legible ("si te gusta
+# X, Y, Z, ..., N, también te gusta W"). Se prioriza la regla de mayor
+# lift con un antecedente de 1-2 servicios — así el mensaje se lee como
+# una sugerencia concreta, no como una lista.
+todas_reglas = fp_model.associationRules
+reglas_legibles = todas_reglas.filter(size(col("antecedent")) <= 2)
+reglas_candidatas = reglas_legibles if reglas_legibles.take(1) else todas_reglas
+reglas = reglas_candidatas.orderBy(col("lift").desc()).limit(1).toPandas()
 
 if len(reglas):
     antecedente = ", ".join(reglas.iloc[0]["antecedent"])
@@ -705,15 +738,27 @@ agregar(
 # Matriz de resultados: permite distinguir aciertos y falsas alarmas. Se
 # presenta con nombres cotidianos para que el administrador entienda qué
 # significa cada número sin leer la salida técnica de Spark.
+#
+# Importante: si el modelo nunca predice una de las dos clases (algo típico
+# cuando el árbol no encontró señal y siempre predice la clase mayoritaria),
+# groupBy() solo devuelve las combinaciones que SÍ ocurrieron — 2 en vez de
+# 4. Eso se veía como una matriz "rota" a medio llenar en el tablero. Se
+# completan las 4 combinaciones posibles con 0 para que siempre se vea una
+# matriz 2x2 completa, aunque algunas celdas queden en cero.
 matriz_pdf = (pred_clf.groupBy("label", "prediction").count()
               .orderBy("label", "prediction").toPandas())
+conteos = {
+    (int(fila["label"]), int(fila["prediction"])): int(fila["count"])
+    for _, fila in matriz_pdf.iterrows()
+}
 matriz_valores = []
 matriz_labels = []
-for _, fila in matriz_pdf.iterrows():
-    real = "cancelación" if int(fila["label"]) == 1 else "no cancelación"
-    predicho = "cancelación" if int(fila["prediction"]) == 1 else "no cancelación"
-    matriz_labels.append(f"Real: {real}\nDetectado: {predicho}")
-    matriz_valores.append(int(fila["count"]))
+for real_val in (0, 1):
+    for pred_val in (0, 1):
+        real = "cancelación" if real_val == 1 else "no cancelación"
+        predicho = "cancelación" if pred_val == 1 else "no cancelación"
+        matriz_labels.append(f"Real: {real}\nDetectado: {predicho}")
+        matriz_valores.append(conteos.get((real_val, pred_val), 0))
 agregar(
     tipo="matriz_resultados_cancelacion", unidad="III",
     roles=["administrador"],
