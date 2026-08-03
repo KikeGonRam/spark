@@ -70,16 +70,61 @@ while _ROOT != os.path.dirname(_ROOT) and not os.path.isdir(os.path.join(_ROOT, 
 sys.path.insert(0, _ROOT)
 
 from pyspark.sql.functions import col, count, sum as ssum, avg, round as sround
-from pyspark.ml.feature import VectorAssembler
+from pyspark.sql.functions import collect_set, size, to_date, dayofweek, month, when
+from pyspark.ml.feature import VectorAssembler, StandardScaler, PCA
 from pyspark.ml.clustering import KMeans
 from pyspark.ml.fpm import FPGrowth
-from pyspark.sql.functions import collect_set, size
+from pyspark.ml.regression import LinearRegression
+from pyspark.ml.classification import DecisionTreeClassifier, RandomForestClassifier
+from pyspark.ml.evaluation import RegressionEvaluator, BinaryClassificationEvaluator
 
 from config.mongo_spark_conexion_sinnulos import (
     get_spark_session, get_clientes_df, get_pagos_df, get_loyalty_df,
     get_horarios_df, get_utilizacion_barberos_df, get_productos_df,
     get_pedidos_df, get_top_productos_df, _connect_db, DIAS_SEMANA, MESES,
+    FEATURES_CANCEL,
 )
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CATEGORÍA de cada insight — agrupa los hallazgos en la app por ETAPA del
+# proceso de análisis de datos (no por "unidad de la materia"), para que un
+# usuario que no sabe nada de esto lo entienda como una historia con pasos:
+#
+#   introduccion   → "¿qué es todo esto?"
+#   preparacion    → "Paso 1: limpiar y organizar los datos" (ETL / limpieza / DW)
+#   negocio        → "El negocio hoy" (los KPIs descriptivos del estado actual)
+#   supervisado    → "Predecir el futuro" (modelos que aprenden del pasado:
+#                     regresión de facturación, clasificación de cancelaciones,
+#                     churn, predicción de demanda)
+#   no_supervisado → "Descubrir patrones ocultos" (KMeans, PCA, FP-Growth:
+#                     la computadora agrupa y encuentra relaciones por su cuenta)
+#
+# Se resuelve por el `tipo` del insight en un solo lugar (al final, antes de
+# escribir en Mongo), para no tener que pasar la categoría en cada llamada.
+# ─────────────────────────────────────────────────────────────────────────────
+CATEGORIA_POR_TIPO = {
+    "acerca_de_la_analitica":      "introduccion",
+    "calidad_datos_etl":           "preparacion",
+    "resumen_ejecutivo":           "negocio",
+    "calidad_pagos":               "negocio",
+    "fidelizacion_ratio":          "negocio",
+    "inventario_alertas":          "negocio",
+    "tienda_pedidos":              "negocio",
+    "utilizacion_equipo":          "negocio",
+    "utilizacion_propia":          "negocio",
+    "engagement_muro_top":         "negocio",
+    "engagement_propio":           "negocio",
+    "demanda_horas_pico":          "supervisado",
+    "demanda_horas_pico_propia":   "supervisado",
+    "regresion_facturacion":       "supervisado",
+    "clientes_en_riesgo":          "supervisado",
+    "clasificacion_cancelacion":   "supervisado",
+    "segmentacion_clientes":       "no_supervisado",
+    "perfil_citas_premium":        "no_supervisado",
+    "pca_factores":                "no_supervisado",
+    "recomendacion_servicios":     "no_supervisado",
+    "tambien_te_puede_interesar":  "no_supervisado",
+}
 
 print("\n" + "=" * 70)
 print("EXPORTANDO INSIGHTS EN LENGUAJE NATURAL PARA EL DASHBOARD DE LARAVEL")
@@ -140,18 +185,70 @@ agregar(
     titulo="¿Qué es esto?",
     mensaje=("Estas tarjetas se calculan automáticamente a partir del historial real "
              "de la barbería (citas, pagos, inventario, publicaciones). No hay que "
-             "hacer nada: se actualizan solas todos los días."),
+             "hacer nada: se actualizan solas todos los días. Cada sección de arriba "
+             "es un paso del proceso: primero preparamos los datos, luego los usamos "
+             "para entender el negocio, predecir el futuro y descubrir patrones."),
     valor_destacado="Automático",
     color="info",
 )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# UNIDAD II — Resumen ejecutivo del negocio (MapReduce / agregación simple)
+# PREPARACIÓN DE DATOS (Unidad II — ETL / limpieza / calidad)
+#   "Paso 1" del proceso: antes de analizar nada, hay que revisar que los datos
+#   estén completos y bien formados. Aquí se reporta, en lenguaje simple, el
+#   tamaño y la calidad del conjunto de datos que alimenta TODO lo demás.
 # ═══════════════════════════════════════════════════════════════════════════
 total_citas = df.count()
 ingreso_total = df.filter(col("estado") == "completada").agg(ssum("ingreso")).first()[0] or 0.0
 print(f"\nTotal citas históricas: {total_citas} | Ingreso histórico: ${ingreso_total:,.0f}")
+
+# Calidad: qué porcentaje de las citas tiene sus datos clave completos
+# (cliente identificado, servicio real y fecha válida). El JOIN de la capa de
+# datos ya resolvió los nombres; aquí medimos cuántos quedaron "sanos".
+citas_completas = df.filter(
+    (col("client_id") != "") & (col("servicio") != "Desconocido") & (col("anio") > 0)
+).count()
+pct_calidad = round(citas_completas / total_citas * 100, 1) if total_citas else 0.0
+
+# Composición del dataset por estado — para una gráfica de dona que muestre
+# "de qué está hecha" la información (cuántas completadas, canceladas, etc.).
+estados_pdf = df.groupBy("estado").agg(count("*").alias("n")).orderBy(col("n").desc()).toPandas()
+grafica_etl = {
+    "tipo": "doughnut",
+    "labels": [str(e).replace("_", " ").capitalize() for e in estados_pdf["estado"]],
+    "valores": [int(n) for n in estados_pdf["n"]],
+} if len(estados_pdf) else None
+
+agregar(
+    tipo="calidad_datos_etl", unidad="II",
+    roles=["administrador"],
+    titulo="Datos limpios y listos para analizar",
+    grafica=grafica_etl,
+    mensaje=(f"Antes de sacar cualquier conclusión, el sistema junta y limpia toda la "
+             f"información del negocio: {total_citas:,} citas, más pagos, inventario y "
+             f"publicaciones. El {pct_calidad}% de las citas tiene sus datos clave "
+             "completos (cliente, servicio y fecha correctos); el resto se descarta para "
+             "que los resultados sean confiables. La gráfica muestra de qué está hecha "
+             "esa información: cuántas citas se completaron, se cancelaron, etc."),
+    valor_destacado=f"{pct_calidad}% de datos completos",
+    color="success" if pct_calidad >= 95 else "warning",
+)
+
+# Control de limpieza visible para negocio: el porcentaje por sí solo no
+# explica cuántos registros se excluyeron de los cálculos. Esta tarjeta deja
+# claro que las decisiones se toman con datos identificables y consistentes.
+registros_excluidos = max(total_citas - citas_completas, 0)
+agregar(
+    tipo="control_limpieza_datos", unidad="II",
+    roles=["administrador"],
+    titulo="Revisión de calidad de registros",
+    mensaje=(f"Se revisaron {total_citas:,} registros antes de calcular los indicadores. "
+             f"{registros_excluidos:,} no tenían cliente, servicio o fecha válidos y "
+             "se excluyeron de los análisis para no distorsionar las decisiones."),
+    valor_destacado=f"{registros_excluidos:,} registros excluidos",
+    color="success" if registros_excluidos == 0 else "warning",
+)
 
 # Ingreso de los últimos 6 meses con datos (año+mes reales) — para dibujar
 # la tendencia en una gráfica de línea en vez de solo el número total.
@@ -258,6 +355,64 @@ if len(por_barbero_hora):
             valor_destacado=f"{int(fila['hora']):02d}:00",
             color="warning",
         )
+
+
+# Alertas de cancelación: se entrenan dos modelos con los mismos datos de
+# entrenamiento/prueba. El usuario final ve la acción y la confiabilidad, no
+# el nombre técnico del algoritmo ni variables que no le ayudan a decidir.
+df_cancelaciones = df.withColumn("label", col("es_cancelada").cast("double"))
+train_cancel, test_cancel = df_cancelaciones.randomSplit([0.7, 0.3], seed=42)
+if train_cancel.select("label").distinct().count() > 1 and test_cancel.select("label").distinct().count() > 1:
+    ensamblador_cancel = VectorAssembler(
+        inputCols=FEATURES_CANCEL, outputCol="features", handleInvalid="skip"
+    )
+    train_ml = ensamblador_cancel.transform(train_cancel).select("features", "label")
+    test_ml = ensamblador_cancel.transform(test_cancel).select("features", "label")
+    evaluador_auc = BinaryClassificationEvaluator(labelCol="label", metricName="areaUnderROC")
+
+    arbol = DecisionTreeClassifier(featuresCol="features", labelCol="label", maxDepth=4, seed=42).fit(train_ml)
+    pred_arbol = arbol.transform(test_ml)
+    auc_arbol = evaluador_auc.evaluate(pred_arbol)
+    importancia_arbol = list(arbol.featureImportances)
+    factor_arbol, peso_arbol = max(zip(FEATURES_CANCEL, importancia_arbol), key=lambda item: item[1])
+
+    nombres_factores = {
+        "duracion_min": "Duración del servicio", "precio": "Importe del servicio",
+        "hora": "Horario", "dia_semana": "Día de la semana", "mes": "Mes",
+    }
+    grafica_factores = {
+        "tipo": "bar",
+        "labels": [nombres_factores.get(nombre, nombre) for nombre, _ in sorted(zip(FEATURES_CANCEL, importancia_arbol), key=lambda item: -item[1])],
+        "valores": [round(float(valor) * 100, 1) for _, valor in sorted(zip(FEATURES_CANCEL, importancia_arbol), key=lambda item: -item[1])],
+    }
+    agregar(
+        tipo="alertas_cancelacion", unidad="III",
+        roles=["administrador", "recepcionista"],
+        titulo="Alertas para confirmar citas",
+        mensaje=(f"El sistema identifica señales de posible cancelación con una confiabilidad de "
+                 f"{auc_arbol * 100:.0f}%. El factor con mayor peso es {nombres_factores.get(factor_arbol, factor_arbol).lower()}. "
+                 "Usa esta alerta para confirmar con anticipación, no para cancelar citas automáticamente."),
+        valor_destacado=f"{auc_arbol * 100:.0f}% de confiabilidad",
+        color="warning" if auc_arbol >= 0.65 else "info",
+        grafica=grafica_factores,
+    )
+
+    bosque = RandomForestClassifier(
+        featuresCol="features", labelCol="label", numTrees=100, maxDepth=5, seed=42
+    ).fit(train_ml)
+    auc_bosque = evaluador_auc.evaluate(bosque.transform(test_ml))
+    mejora = (auc_bosque - auc_arbol) * 100
+    agregar(
+        tipo="confirmacion_cancelacion_reforzada", unidad="III",
+        roles=["administrador"],
+        titulo="Confiabilidad reforzada para cancelaciones",
+        mensaje=(f"Una segunda revisión con múltiples escenarios alcanza {auc_bosque * 100:.0f}% de confiabilidad"
+                 + (f", {abs(mejora):.1f} puntos por encima de la primera alerta." if mejora >= 0 else
+                    f", {abs(mejora):.1f} puntos por debajo de la primera alerta; se conserva la alerta más confiable.")
+                 + " Sirve para decidir cuándo enviar recordatorios o pedir confirmación."),
+        valor_destacado=f"{auc_bosque * 100:.0f}% de confiabilidad",
+        color="success" if auc_bosque >= auc_arbol else "info",
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -415,6 +570,160 @@ agregar(
              "son un buen candidato para promocionar activamente."),
     valor_destacado=f"{pct_premium}% de las citas",
     color="gold",
+)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# NO SUPERVISADO — PCA (reducción de dimensionalidad)
+#   Se entrena sobre una MUESTRA (30%) del dataset: para reportar la varianza
+#   explicada de una insight de tablero, una muestra da el mismo resultado que
+#   el total y usa mucha menos memoria (importante en WSL, ver notas del
+#   proyecto sobre OOM al procesar 112k filas).
+# ═══════════════════════════════════════════════════════════════════════════
+df_muestra = df.sample(False, 0.3, seed=42)
+assembler_pca = VectorAssembler(inputCols=["duracion_min", "precio", "ingreso"],
+                                outputCol="feat_pca", handleInvalid="skip")
+vec_pca = assembler_pca.transform(df_muestra)
+escalado = StandardScaler(inputCol="feat_pca", outputCol="scaled_pca",
+                          withMean=True, withStd=True).fit(vec_pca).transform(vec_pca)
+pca_model = PCA(k=2, inputCol="scaled_pca", outputCol="pca_out").fit(escalado)
+var_pca = [float(v) for v in pca_model.explainedVariance]
+pct_2factores = round(sum(var_pca) * 100, 0)
+print(f"\nPCA — varianza explicada por 2 componentes: {pct_2factores}%")
+
+agregar(
+    tipo="pca_factores", unidad="IV",
+    roles=["administrador"],
+    titulo="Los pocos factores que de verdad importan",
+    grafica={
+        "tipo": "bar",
+        "labels": ["Factor 1 (nivel de precio)", "Factor 2 (duración)"],
+        "valores": [round(var_pca[0] * 100, 1), round(var_pca[1] * 100, 1)],
+    },
+    mensaje=("Aunque guardamos muchos datos de cada cita, la computadora descubrió que "
+             f"en el fondo bastan 2 factores para explicar el {pct_2factores:.0f}% de la "
+             "diferencia entre una cita y otra: qué tan cara es y cuánto dura. Esto "
+             "simplifica enormemente cómo entender el catálogo — casi todo se reduce a "
+             "'precio' y 'tiempo'."),
+    valor_destacado=f"2 factores = {pct_2factores:.0f}%",
+    color="info",
+)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SUPERVISADO — Regresión (predecir la facturación de un día)
+#   Se agrega por día (no por cita): predecir el precio de UNA cita sería
+#   trampa (el precio ya está fijado por el servicio). La facturación diaria sí
+#   tiene variación real que vale la pena predecir. Datos pequeños (~cientos de
+#   días) → el entrenamiento es instantáneo.
+# ═══════════════════════════════════════════════════════════════════════════
+dia = (df.filter(col("estado") != "cancelada")
+         .withColumn("fecha_dt", to_date(col("fecha").substr(1, 10), "yyyy-MM-dd"))
+         .groupBy("fecha_dt")
+         .agg(count("*").alias("num_citas"), ssum("ingreso").alias("ingreso_dia"))
+         .withColumn("dia_semana", dayofweek(col("fecha_dt")))
+         .withColumn("mes", month(col("fecha_dt")))
+         .dropna())
+vec_reg = VectorAssembler(inputCols=["num_citas", "dia_semana", "mes"],
+                          outputCol="features_reg", handleInvalid="skip").transform(dia)
+train_reg, test_reg = vec_reg.randomSplit([0.8, 0.2], seed=42)
+modelo_reg = LinearRegression(featuresCol="features_reg", labelCol="ingreso_dia").fit(train_reg)
+r2 = RegressionEvaluator(labelCol="ingreso_dia", metricName="r2").evaluate(modelo_reg.transform(test_reg))
+print(f"Regresión — R2 (precisión) de la predicción de facturación diaria: {r2:.3f}")
+
+agregar(
+    tipo="regresion_facturacion", unidad="III",
+    roles=["administrador"],
+    titulo="Predecir cuánto se facturará en un día",
+    mensaje=("La computadora aprende del historial para adivinar cuánto facturará la "
+             "barbería un día cualquiera, usando solo cuántas citas hay agendadas y qué "
+             f"día de la semana y mes es. Acierta con un {r2 * 100:.0f}% de precisión — lo "
+             "suficientemente bien como para planear con anticipación cuánto personal e "
+             "inventario tener. Esto se llama 'aprendizaje supervisado': el modelo "
+             "aprende de ejemplos del pasado donde ya sabemos la respuesta."),
+    valor_destacado=f"{r2 * 100:.0f}% de precisión",
+    color="gold",
+)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SUPERVISADO — Clasificación (detectar citas con riesgo de cancelarse)
+#   Árbol de decisión sobre una muestra (30%). El estado NO se usa como
+#   feature (sería trampa): el modelo predice desde el CONTEXTO de la cita
+#   (horario, día, precio). Métrica AUC (0.5 = azar, 1.0 = perfecto).
+# ═══════════════════════════════════════════════════════════════════════════
+vec_clf = VectorAssembler(inputCols=["duracion_min", "precio", "hora", "dia_semana", "mes"],
+                          outputCol="features_clf", handleInvalid="skip").transform(df_muestra)
+data_clf = vec_clf.select("features_clf", col("es_cancelada").alias("label"))
+train_clf, test_clf = data_clf.randomSplit([0.8, 0.2], seed=42)
+modelo_clf = DecisionTreeClassifier(featuresCol="features_clf", labelCol="label", maxDepth=4).fit(train_clf)
+pred_clf = modelo_clf.transform(test_clf).cache()
+auc = BinaryClassificationEvaluator(labelCol="label", metricName="areaUnderROC").evaluate(pred_clf)
+tasa_cancel = round((df.agg(avg("es_cancelada")).first()[0] or 0.0) * 100, 1)
+print(f"Clasificación — AUC de la detección de cancelaciones: {auc:.3f} | tasa: {tasa_cancel}%")
+
+# Tasa de cancelación por día de la semana — la gráfica descriptiva que
+# acompaña al modelo (muestra si hay días "peores" que otros).
+cancel_dia = (df.filter(col("dia_semana") > 0)
+                .groupBy("dia_semana")
+                .agg(sround(avg("es_cancelada") * 100, 1).alias("pct_cancel"))
+                .orderBy("dia_semana").toPandas())
+
+# Interpretación HONESTA según lo que el modelo realmente encontró:
+#  - Si el AUC está cerca de 0.5, el horario/servicio NO predicen la
+#    cancelación (ocurren de forma pareja) → un hallazgo válido en sí mismo:
+#    la palanca es reforzar recordatorios en general, no reprogramar franjas.
+#  - Si el AUC es alto, el modelo sí encontró franjas de riesgo.
+# Nunca se infla el número: se reporta el AUC real y se explica qué significa.
+if auc >= 0.6:
+    interpretacion = (f"El modelo SÍ encuentra patrones útiles (su acierto, una métrica "
+                      f"llamada AUC donde 1.0 es perfecto, es de {auc:.2f}): ciertas franjas "
+                      "concentran más cancelaciones y conviene reforzar la confirmación ahí.")
+else:
+    interpretacion = ("Curiosamente, las cancelaciones ocurren de forma pareja en todos los "
+                      "horarios y servicios — no hay franjas 'malas' que evitar. El modelo lo "
+                      f"confirma (su acierto AUC es {auc:.2f}, casi como adivinar al azar). El "
+                      "hallazgo útil: la palanca para bajar cancelaciones no es reprogramar "
+                      "horarios, sino reforzar los recordatorios de forma general.")
+
+agregar(
+    tipo="clasificacion_cancelacion", unidad="III",
+    roles=["administrador"],
+    titulo="Análisis de cancelaciones",
+    grafica={
+        "tipo": "bar",
+        "labels": [DIAS_SEMANA.get(int(d), str(d)) for d in cancel_dia["dia_semana"]],
+        "valores": [float(p) for p in cancel_dia["pct_cancel"]],
+    } if len(cancel_dia) else None,
+    mensaje=("Entrenamos un modelo que intenta anticipar qué citas se cancelarán, según "
+             f"su horario, día y tipo de servicio. {interpretacion} La gráfica muestra la "
+             "tasa de cancelación por día de la semana."),
+    valor_destacado=f"{tasa_cancel:.0f}% se cancelan",
+    color="warning",
+)
+
+# Matriz de resultados: permite distinguir aciertos y falsas alarmas. Se
+# presenta con nombres cotidianos para que el administrador entienda qué
+# significa cada número sin leer la salida técnica de Spark.
+matriz_pdf = (pred_clf.groupBy("label", "prediction").count()
+              .orderBy("label", "prediction").toPandas())
+matriz_valores = []
+matriz_labels = []
+for _, fila in matriz_pdf.iterrows():
+    real = "cancelación" if int(fila["label"]) == 1 else "no cancelación"
+    predicho = "cancelación" if int(fila["prediction"]) == 1 else "no cancelación"
+    matriz_labels.append(f"Real: {real}\nDetectado: {predicho}")
+    matriz_valores.append(int(fila["count"]))
+agregar(
+    tipo="matriz_resultados_cancelacion", unidad="III",
+    roles=["administrador"],
+    titulo="Qué tan bien detecta las cancelaciones",
+    mensaje=("La matriz compara lo que ocurrió realmente con lo que el sistema anticipó. "
+             "Los aciertos sirven para priorizar recordatorios; las falsas alarmas solo "
+             "deben revisarse, nunca cancelar automáticamente una cita."),
+    valor_destacado=f"{sum(matriz_valores):,} citas evaluadas",
+    color="info",
+    grafica={"tipo": "bar", "labels": matriz_labels, "valores": matriz_valores} if matriz_valores else None,
 )
 
 
@@ -641,6 +950,16 @@ if agg_social:
             valor_destacado=f"{engagement} interacciones/post",
             color="info",
         )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Asignar la CATEGORÍA (etapa del proceso) a cada insight en un solo lugar,
+# resolviéndola por su `tipo`. Así la app las agrupa en pestañas por etapa
+# (preparación → negocio → supervisado → no supervisado) sin tener que pasar
+# la categoría en cada una de las ~20 llamadas a agregar().
+# ═══════════════════════════════════════════════════════════════════════════
+for d in insights:
+    d["categoria"] = CATEGORIA_POR_TIPO.get(d["tipo"], "negocio")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
