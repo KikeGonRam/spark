@@ -48,6 +48,14 @@ import pandas as pd
 ESTADOS_VALIDOS   = ["cancelada", "completada", "confirmada", "en_proceso", "no_asistio", "pendiente"]
 ESTADOS_PERDIDA   = ["cancelada", "no_asistio"]  # estados que representan ingreso perdido
 ESTADOS_TERMINALES = ["completada", "cancelada", "no_asistio"]  # ya no cambian de estado
+# Estado real de Payment (barber: App\Models\Payment::ESTADO_VERIFICADO) — el
+# único que representa dinero efectivamente recibido. 'pendiente_verificacion'
+# es una transferencia sin revisar todavía y 'rechazado' nunca se cobró; get_pagos_df()
+# los incluye a los tres para que el DataFrame sirva también de auditoría de calidad
+# (cuántos pagos se rechazan, cuántos quedan sin revisar), pero cualquier suma de
+# dinero (propina, monto) debe filtrar por este estado antes de sumar — mismo
+# criterio que CashCloseService/PaymentController::index() en barber.
+PAGO_ESTADO_VERIFICADO = "verificado"
 CATEGORIAS        = ["barba", "combo", "corte", "tratamiento"]
 DIAS_SEMANA       = {1: "Lunes", 2: "Martes", 3: "Miércoles", 4: "Jueves",
                      5: "Viernes", 6: "Sábado", 7: "Domingo"}
@@ -366,7 +374,16 @@ def get_clientes_df(spark, df=None, fecha_ref=None):
 # ─────────────────────────────────────────────────────────────────────────────
 def get_pagos_df(spark):
     """Une `payments` con `appointments` para reconciliar cobros y detectar
-    quién procesó cada pago (created_by → users.name)."""
+    quién procesó cada pago (created_by → users.name).
+
+    Incluye pagos en cualquier estado (verificado/pendiente_verificacion/
+    rechazado) a propósito — es lo que hace posible la auditoría de calidad
+    de 08_calidad_pagos.py (cuántos se rechazan, cuántos quedan sin
+    revisar). La columna 'estado' viaja en cada registro precisamente para
+    que quien sume dinero (propina, monto) pueda y deba filtrar primero por
+    PAGO_ESTADO_VERIFICADO — antes esta función ni siquiera devolvía el
+    estado del pago, así que un rechazo o una transferencia sin revisar
+    entraban a cualquier suma de ingresos sin forma de excluirlos."""
     client, database = _connect_db()
     db = client[database]
     services_map, barbers_map, clients_map, users_map = _build_maps(db)
@@ -378,7 +395,7 @@ def get_pagos_df(spark):
     }
     pagos = list(db["payments"].find(
         {}, {"_id": 0, "appointment_id": 1, "monto": 1, "propina": 1,
-             "metodo_pago": 1, "created_by": 1, "created_at": 1}))
+             "metodo_pago": 1, "created_by": 1, "created_at": 1, "estado": 1}))
     client.close()
 
     records = []
@@ -393,6 +410,10 @@ def get_pagos_df(spark):
             "metodo_pago":  str(p.get("metodo_pago", "efectivo")),
             "procesado_por": users_map.get(str(p.get("created_by", "")), {}).get("name", "Desconocido"),
             "estado_cita":  str(apt.get("estado", "")),
+            # Sin PAGO_ESTADO_VERIFICADO como default: un registro con
+            # 'estado' ausente es un dato dudoso, y el punto de este campo
+            # es justo no contar como ingreso nada que no esté confirmado.
+            "estado_pago":  str(p.get("estado", "")),
             "tiene_cita":   1 if apt else 0,
         })
 

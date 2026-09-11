@@ -82,7 +82,7 @@ from config.mongo_spark_conexion_sinnulos import (
     get_spark_session, get_clientes_df, get_pagos_df, get_loyalty_df,
     get_horarios_df, get_utilizacion_barberos_df, get_productos_df,
     get_pedidos_df, get_top_productos_df, _connect_db, DIAS_SEMANA, MESES,
-    FEATURES_CANCEL,
+    FEATURES_CANCEL, PAGO_ESTADO_VERIFICADO,
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -833,7 +833,14 @@ if len(utilizacion):
 pagos_df = get_pagos_df(spark)
 if pagos_df is not None:
     n_metodos = pagos_df.select("metodo_pago").distinct().count()
-    propina_total = pagos_df.agg(ssum("propina")).first()[0] or 0.0
+    # get_pagos_df() trae pagos en cualquier estado (rechazados y transferencias
+    # sin revisar incluidos) para poder auditar calidad; para "propinas
+    # registradas" — un dinero real que se le dice al usuario que ya se cobró —
+    # solo cuentan los verificados, igual que en main_dashboard.py.
+    propina_total = (
+        pagos_df.filter(col("estado_pago") == PAGO_ESTADO_VERIFICADO)
+        .agg(ssum("propina")).first()[0] or 0.0
+    )
     agregar(
         tipo="calidad_pagos", unidad="II",
         roles=["administrador"],

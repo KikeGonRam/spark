@@ -24,6 +24,7 @@ from config.mongo_spark_conexion_sinnulos import (
     FEATURES_CANCEL, DIAS_SEMANA, MESES, get_clientes_df,
     get_pagos_df, get_loyalty_df, get_horarios_df, get_utilizacion_barberos_df,
     get_productos_df, get_pedidos_df, get_top_productos_df, get_publicaciones_df,
+    PAGO_ESTADO_VERIFICADO,
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -639,11 +640,24 @@ if "Pagos y Calidad" in _visible:
         if pagos_pdf is None or pagos_pdf.empty:
             st.warning("Sin datos de pagos disponibles.")
         else:
+            # get_pagos_df() incluye pagos en cualquier estado a propósito
+            # (es la fuente de este mismo tab de calidad), pero una
+            # transferencia rechazada o sin revisar nunca fue dinero real:
+            # antes "Propina total" y "Monto cobrado por servicio" sumaban
+            # los 11,016 pagos completos, sin poder distinguirlos siquiera
+            # (get_pagos_df() no devolvía el estado del pago). Las dos
+            # métricas de dinero real se calculan solo sobre lo verificado;
+            # el conteo de "Pagos registrados" sí incluye todo, porque es
+            # justo la señal de calidad que este tab promete.
+            pagos_verificados = pagos_pdf[pagos_pdf["estado_pago"] == PAGO_ESTADO_VERIFICADO]
+            n_no_verificados = len(pagos_pdf) - len(pagos_verificados)
+
             n_metodos = pagos_pdf["metodo_pago"].nunique()
             n_procesadores = pagos_pdf["procesado_por"].nunique()
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Pagos registrados", f"{len(pagos_pdf):,}")
-            c2.metric("Propina total", f"${pagos_pdf['propina'].sum():,.0f}")
+            c1.metric("Pagos registrados", f"{len(pagos_pdf):,}",
+                      help="Incluye pagos rechazados y transferencias sin verificar.")
+            c2.metric("Propina total (verificada)", f"${pagos_verificados['propina'].sum():,.0f}")
             c3.metric("Métodos de pago", n_metodos)
             c4.metric("Procesadores distintos", n_procesadores)
 
@@ -657,9 +671,9 @@ if "Pagos y Calidad" in _visible:
                 fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
                 st.plotly_chart(fig, use_container_width=True)
             with col_b:
-                top_svc = pagos_pdf.groupby("servicio")["monto"].sum().reset_index().sort_values("monto", ascending=False).head(10)
+                top_svc = pagos_verificados.groupby("servicio")["monto"].sum().reset_index().sort_values("monto", ascending=False).head(10)
                 fig2 = px.bar(top_svc, x="monto", y="servicio", orientation="h",
-                              title="Monto cobrado por servicio (top 10)",
+                              title="Monto cobrado por servicio (top 10, solo pagos verificados)",
                               color="monto", color_continuous_scale=[[0, "#333"], [1, GOLD]])
                 fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                                    font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
@@ -667,7 +681,10 @@ if "Pagos y Calidad" in _visible:
 
             st.info(f"**Calidad de datos:** {n_procesadores} cuenta(s) procesan el 100% de los cobros "
                     f"y se usa {n_metodos} método de pago (`{pagos_pdf['metodo_pago'].iloc[0]}`) — "
-                    f"el sistema centraliza el cobro y no hay variedad de métodos digitales todavía.",
+                    f"el sistema centraliza el cobro y no hay variedad de métodos digitales todavía. "
+                    f"{n_no_verificados:,} de los {len(pagos_pdf):,} pagos registrados "
+                    f"({n_no_verificados / len(pagos_pdf):.1%}) están rechazados o pendientes de "
+                    f"verificar y no se cuentan en las métricas de dinero de arriba.",
                     icon=":material/info:")
 
 # ══════════════════════════════════════════════════════════════════════════════
