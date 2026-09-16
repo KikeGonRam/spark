@@ -34,7 +34,10 @@ from config.mongo_spark_conexion_sinnulos import (
 # ─────────────────────────────────────────────────────────────────────────────
 # CONFIGURACIÓN
 # ─────────────────────────────────────────────────────────────────────────────
-_LOGO_PATH = os.path.join(os.path.dirname(__file__), "assets", "urbanblade-logo.png")
+_ASSETS = os.path.join(os.path.dirname(__file__), "assets")
+_LOGO_PATH = os.path.join(_ASSETS, "urbanblade-mark.png")
+_BRUNO_PATH = os.path.join(_ASSETS, "bruno-raven.png")
+_NAVA_EMPTY_PATH = os.path.join(_ASSETS, "nava-empty.webp")
 
 st.set_page_config(
     page_title="UrbanBlade Analytics",
@@ -452,9 +455,16 @@ def analizar_comisiones_resenas(_df_pandas):
 # SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.image(_LOGO_PATH, width=88)
+    st.image(_LOGO_PATH, width=64)
     st.markdown(f"<h1 style='color:{GOLD};font-size:26px;margin-top:6px;margin-bottom:0'>UrbanBlade</h1>", unsafe_allow_html=True)
     st.caption("Analítica de negocio en tiempo real")
+    st.divider()
+    col_bruno, col_txt = st.columns([1, 2])
+    with col_bruno:
+        st.image(_BRUNO_PATH, width=64)
+    with col_txt:
+        st.caption("**Bruno** — guardián del conocimiento. Lee los datos reales de "
+                   "`barber_db` y te avisa cuando algo no cuadra.")
     st.divider()
     st.markdown("**Filtros**")
     vista_sel = st.radio(
@@ -488,10 +498,14 @@ except Exception as e:
 # este flag en vez de intentarlo directamente.
 hay_citas = len(pdf) > 0
 if not hay_citas:
-    st.warning("**barber_db no tiene citas registradas todavía.** El resumen ejecutivo y los "
-               "modelos predictivos y de segmentación requieren al menos algunas citas reales "
-               "para entrenar — aparecerán automáticamente en cuanto existan datos.",
-               icon=":material/warning:")
+    col_nava, col_msg = st.columns([1, 8])
+    with col_nava:
+        st.image(_NAVA_EMPTY_PATH, width=80)
+    with col_msg:
+        st.warning("**barber_db no tiene citas registradas todavía.** El resumen ejecutivo y los "
+                   "modelos predictivos y de segmentación requieren al menos algunas citas reales "
+                   "para entrenar — aparecerán automáticamente en cuanto existan datos.",
+                   icon=":material/warning:")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HEADER + KPIs GLOBALES
