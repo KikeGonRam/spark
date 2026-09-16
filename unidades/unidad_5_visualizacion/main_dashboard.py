@@ -1,7 +1,6 @@
 ﻿"""
 Dashboard Principal – UrbanBlade Analytics
-Unidades II–V | Materia: Extracción del conocimiento en bases de datos
-UTVT IDGS-93 | MGTI. Héctor Velázquez Estrada | Mayo–Agosto 2026
+Panel de inteligencia de negocio sobre datos reales de barber_db (MongoDB Atlas).
 Equipo: Equipo UrbanBlade
 
 Ejecutar:  streamlit run unidades/unidad_5_visualizacion/main_dashboard.py
@@ -683,7 +682,7 @@ if "MapReduce / ETL" in _visible:
 if "Pagos y Calidad" in _visible:
     with tabs[_visible.index("Pagos y Calidad")]:
         st.subheader("Pagos y Calidad de Datos")
-        st.caption("Colección `payments` (11,016 docs) — reconciliación de cobros y métodos de pago")
+        st.caption("Colección `payments` — reconciliación de cobros y métodos de pago")
 
         pagos_pdf = analizar_pagos(spark)
         if pagos_pdf is None or pagos_pdf.empty:
@@ -742,7 +741,7 @@ if "Pagos y Calidad" in _visible:
 if "Fidelizacion" in _visible:
     with tabs[_visible.index("Fidelizacion")]:
         st.subheader("Programa de Fidelización")
-        st.caption("Colección `loyalty_transactions` (11,016 docs) — puntos ganados por cliente")
+        st.caption("Colección `loyalty_transactions` — puntos ganados por cliente")
 
         loy_pdf = analizar_fidelizacion(spark)
         if loy_pdf is None or loy_pdf.empty:
@@ -788,7 +787,7 @@ if "Fidelizacion" in _visible:
 if "Utilizacion Barberos" in _visible:
     with tabs[_visible.index("Utilizacion Barberos")]:
         st.subheader("Utilización de Barberos (oferta vs demanda)")
-        st.caption("Colección `barber_schedules` (175 docs) — horas disponibles vs horas ocupadas")
+        st.caption("Colección `barber_schedules` — horas disponibles vs horas ocupadas")
 
         horarios, util = analizar_utilizacion(pdf)
         if util is None or util.empty:
@@ -833,7 +832,7 @@ if "Utilizacion Barberos" in _visible:
 if "Inventario" in _visible:
     with tabs[_visible.index("Inventario")]:
         st.subheader("Salud del Inventario")
-        st.caption("Colección `products` (31 docs) — stock, márgenes y categorías")
+        st.caption("Colección `products` — stock, márgenes y categorías")
 
         productos = analizar_inventario()
         if productos is None or productos.empty:
@@ -1668,7 +1667,7 @@ if "PCA" in _visible:
 if "Segmentacion Clientes" in _visible:
     with tabs[_visible.index("Segmentacion Clientes")]:
         st.subheader("Segmentación de Clientes (RFM + KMeans)")
-        st.caption("1000 clientes reales agrupados en 4 segmentos por comportamiento de consumo")
+        st.caption("Clientes reales agrupados en 4 segmentos por comportamiento de consumo")
 
         if not hay_citas:
             st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
