@@ -46,8 +46,7 @@ combos, referidos, lista de espera, rifas, reseñas, comision de barberos):
     Todas devuelven pandas.DataFrame (nunca None) — DataFrame vacio si la
     coleccion no tiene documentos, igual que get_horarios_df()/get_productos_df().
 
-Equipo : Equipo UrbanBlade — UTVT IDGS-93
-Materia: Extracción del conocimiento en bases de datos — MGTI. Héctor Velázquez Estrada
+Equipo: Equipo UrbanBlade
 """
 import sys
 import os
@@ -444,7 +443,7 @@ def get_clientes_df(spark, df=None, fecha_ref=None):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Helper: DataFrame de PAGOS (colección `payments`, 11,016 docs) — control de calidad
+# Helper: DataFrame de PAGOS (colección `payments`) — control de calidad
 # ─────────────────────────────────────────────────────────────────────────────
 def get_pagos_df(spark):
     """Une `payments` con `appointments` para reconciliar cobros y detectar
@@ -496,7 +495,7 @@ def get_pagos_df(spark):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Helper: DataFrame de FIDELIZACIÓN (colección `loyalty_transactions`, 11,016 docs)
+# Helper: DataFrame de FIDELIZACIÓN (colección `loyalty_transactions`)
 # ─────────────────────────────────────────────────────────────────────────────
 def get_loyalty_df(spark):
     """Puntos de lealtad por cliente con nombre real y fecha para análisis de tendencia."""
@@ -527,7 +526,7 @@ def get_loyalty_df(spark):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Helper: HORARIOS de barberos (colección `barber_schedules`, 175 docs = 25×7 días)
+# Helper: HORARIOS de barberos (colección `barber_schedules`)
 # ─────────────────────────────────────────────────────────────────────────────
 def get_horarios_df():
     """DataFrame pandas (tabla pequeña) con horas disponibles por barbero y día.
@@ -595,7 +594,7 @@ def get_utilizacion_barberos_df(df):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Helper: INVENTARIO (colección `products`, 31 docs)
+# Helper: INVENTARIO (colección `products`)
 # ─────────────────────────────────────────────────────────────────────────────
 def get_productos_df():
     """DataFrame pandas con salud de inventario, márgenes y categoría."""
