@@ -25,6 +25,27 @@ Actualizacion (maquina de estados + tienda + social):
       reactions` (muro de inspiracion) — antes documentadas como vacias,
       ya no lo estan.
 
+Actualizacion (features de negocio P1 — gift cards, membresias, paquetes,
+combos, referidos, lista de espera, rifas, reseñas, comision de barberos):
+    Nueve helpers nuevos, cada uno leyendo su(s) coleccion(es) real(es) y
+    resolviendo nombres via clients/barbers -> users (mismo patron que el
+    resto del archivo). Campos verificados contra los modelos Eloquent reales
+    en `barber/app/Models/` (fillable + casts), no inferidos de datos —
+    ver el docstring de cada funcion para el modelo de origen.
+        get_barberos_df()          Barber (catalogo + comision_pct)
+        get_comisiones_df(df)      Barber.comision_pct x ingreso real (df ya cargado)
+        get_giftcards_df()         GiftCard
+        get_membresias_df()        ClientMembership + MembershipPlan
+        get_membership_invoices_df()  MembershipInvoice (cobros reales, para MRR)
+        get_paquetes_df()          ClientPackage + ServicePackage
+        get_combos_df()            ServiceCombo + pivote combo_service
+        get_referidos_df()         Referral
+        get_waitlist_df()          Waitlist
+        get_rifas_df()             RaffleResult
+        get_resenas_df()           BarberReview (distinto del muro social)
+    Todas devuelven pandas.DataFrame (nunca None) — DataFrame vacio si la
+    coleccion no tiene documentos, igual que get_horarios_df()/get_productos_df().
+
 Equipo : Equipo UrbanBlade — UTVT IDGS-93
 Materia: Extracción del conocimiento en bases de datos — MGTI. Héctor Velázquez Estrada
 """
@@ -729,6 +750,334 @@ def get_publicaciones_df(spark):
 
     pdf = pd.DataFrame(records)
     return spark.createDataFrame(pdf) if len(pdf) else None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: BARBEROS (coleccion `barbers`) — catalogo + comision configurada
+# ─────────────────────────────────────────────────────────────────────────────
+def get_barberos_df():
+    """DataFrame pandas (tabla pequeña) con el catalogo de barberos: nombre,
+    especialidad, si esta activo y su % de comision (Barber::comision_pct,
+    0 si nunca se configuro — ver BarberCommissionService)."""
+    client, database = _connect_db()
+    db = client[database]
+    users_map = {str(u["_id"]): u for u in db["users"].find({}, {"_id": 1, "name": 1})}
+    rows = []
+    for b in db["barbers"].find({}):
+        rows.append({
+            "barbero":      _resolve_barbero(b, users_map),
+            "especialidad": str(b.get("especialidad", "") or ""),
+            "activo":       bool(b.get("activo", True)),
+            "comision_pct": _num(b.get("comision_pct"), 0.0),
+        })
+    client.close()
+    return pd.DataFrame(rows)
+
+
+def get_comisiones_df(df):
+    """Comisión ganada por barbero: ingreso real (citas no canceladas) ×
+    Barber.comision_pct — mismo calculo que BarberCommissionService en el
+    panel admin. `df` es el DataFrame principal ya cargado (pandas, de
+    `get_spark_session().toPandas()` o el propio `pdf` del dashboard) —
+    se reutiliza en vez de volver a consultar Mongo."""
+    barberos = get_barberos_df()
+    if barberos.empty or df.empty:
+        return pd.DataFrame()
+    ingreso_barbero = (df[df["estado"] != "cancelada"]
+                       .groupby("barbero")
+                       .agg(citas=("ingreso", "size"), ingreso_total=("ingreso", "sum"))
+                       .reset_index())
+    out = barberos.merge(ingreso_barbero, on="barbero", how="left")
+    out["citas"] = out["citas"].fillna(0).astype(int)
+    out["ingreso_total"] = out["ingreso_total"].fillna(0.0)
+    out["comision_ganada"] = (out["ingreso_total"] * out["comision_pct"] / 100).round(2)
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: GIFT CARDS (coleccion `gift_cards`) — saldo prepagado, no ligado a
+# ningun servicio (a diferencia de ClientPackage)
+# ─────────────────────────────────────────────────────────────────────────────
+def get_giftcards_df():
+    """Una fila por gift card (GiftCard::$fillable): comprador (cliente
+    registrado si `comprador_client_id` resuelve, si no el nombre libre
+    `comprador_nombre` de un invitado), saldo restante y consumo."""
+    client, database = _connect_db()
+    db = client[database]
+    clients_map = {str(c["_id"]): c for c in db["clients"].find({}, {"_id": 1, "user_id": 1})}
+    users_map   = {str(u["_id"]): u for u in db["users"].find({}, {"_id": 1, "name": 1})}
+
+    rows = []
+    for g in db["gift_cards"].find({}):
+        cli = clients_map.get(str(g.get("comprador_client_id", "")), {})
+        uid = str(cli.get("user_id", ""))
+        comprador = users_map.get(uid, {}).get("name") or g.get("comprador_nombre") or "Invitado"
+        monto_inicial = _num(g.get("monto_inicial"))
+        saldo = _num(g.get("saldo"))
+        fdt = _to_dt(g.get("comprado_en"))
+        rows.append({
+            "code":          str(g.get("code", "")),
+            "comprador":     comprador,
+            "monto_inicial": monto_inicial,
+            "saldo":         saldo,
+            "monto_usado":   round(monto_inicial - saldo, 2),
+            "pct_usado":     round((monto_inicial - saldo) / monto_inicial * 100, 1) if monto_inicial else 0.0,
+            "metodo_pago":   str(g.get("metodo_pago", "")),
+            "estado":        str(g.get("estado", "")),
+            "mes":           fdt.month if fdt else 0,
+            "anio":          fdt.year if fdt else 0,
+        })
+    client.close()
+    return pd.DataFrame(rows)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: MEMBRESÍAS (colecciones `client_memberships` + `membership_plans`
+# + `membership_invoices`) — suscripcion recurrente respaldada por Stripe
+# ─────────────────────────────────────────────────────────────────────────────
+def get_membresias_df():
+    """Una fila por suscripcion (ClientMembership), con nombre/precio/
+    descuento del MembershipPlan ya resuelto."""
+    client, database = _connect_db()
+    db = client[database]
+    clients_map = {str(c["_id"]): c for c in db["clients"].find({}, {"_id": 1, "user_id": 1, "nivel": 1})}
+    users_map   = {str(u["_id"]): u for u in db["users"].find({}, {"_id": 1, "name": 1})}
+    plans_map   = {str(p["_id"]): p for p in db["membership_plans"].find({})}
+
+    rows = []
+    for m in db["client_memberships"].find({}):
+        cli = clients_map.get(str(m.get("client_id", "")), {})
+        uid = str(cli.get("user_id", ""))
+        plan = plans_map.get(str(m.get("membership_plan_id", "")), {})
+        rows.append({
+            "cliente":               users_map.get(uid, {}).get("name", "Cliente"),
+            "nivel":                 str(cli.get("nivel", "regular")),
+            "plan":                  plan.get("nombre", "Desconocido"),
+            "precio_mensual":        _num(plan.get("precio_mensual")),
+            "descuento_pct":         _num(plan.get("descuento_pct")),
+            "estado":                str(m.get("estado", "")),
+            "cancelar_al_finalizar": bool(m.get("cancelar_al_finalizar", False)),
+            "periodo_actual_fin":    str(m.get("periodo_actual_fin", ""))[:10],
+        })
+    client.close()
+    return pd.DataFrame(rows)
+
+
+def get_membership_invoices_df():
+    """Cobros reales (alta/renovacion) de membresias — MembershipInvoice,
+    para ingresos por mes (MRR). Stripe cobra estas renovaciones solo, sin
+    que el staff capture nada localmente — por eso este registro existe."""
+    client, database = _connect_db()
+    db = client[database]
+    memberships_map = {str(m["_id"]): m for m in db["client_memberships"].find(
+        {}, {"_id": 1, "client_id": 1, "membership_plan_id": 1})}
+    clients_map = {str(c["_id"]): c for c in db["clients"].find({}, {"_id": 1, "user_id": 1})}
+    users_map   = {str(u["_id"]): u for u in db["users"].find({}, {"_id": 1, "name": 1})}
+    plans_map   = {str(p["_id"]): p for p in db["membership_plans"].find({}, {"_id": 1, "nombre": 1})}
+
+    rows = []
+    for inv in db["membership_invoices"].find({}):
+        mem = memberships_map.get(str(inv.get("client_membership_id", "")), {})
+        cli = clients_map.get(str(mem.get("client_id", "")), {})
+        uid = str(cli.get("user_id", ""))
+        plan = plans_map.get(str(mem.get("membership_plan_id", "")), {})
+        fdt = _to_dt(inv.get("pagado_en"))
+        rows.append({
+            "cliente": users_map.get(uid, {}).get("name", "Cliente"),
+            "plan":    plan.get("nombre", "Desconocido"),
+            "monto":   _num(inv.get("monto")),
+            "mes":     fdt.month if fdt else 0,
+            "anio":    fdt.year if fdt else 0,
+        })
+    client.close()
+    return pd.DataFrame(rows)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: PAQUETES (colecciones `client_packages` + `service_packages`) — N
+# usos de UN servicio prepagados, distinto de un ServiceCombo
+# ─────────────────────────────────────────────────────────────────────────────
+def get_paquetes_df():
+    """Una fila por paquete COMPRADO (ClientPackage): servicio, usos
+    totales/restantes/consumidos, precio pagado. `service_id` viene
+    denormalizado en ClientPackage (copiado al comprar), no requiere pasar
+    por ServicePackage para resolverlo."""
+    client, database = _connect_db()
+    db = client[database]
+    clients_map    = {str(c["_id"]): c for c in db["clients"].find({}, {"_id": 1, "user_id": 1, "nivel": 1})}
+    users_map      = {str(u["_id"]): u for u in db["users"].find({}, {"_id": 1, "name": 1})}
+    services_map   = {str(s["_id"]): s for s in db["services"].find({}, {"_id": 1, "nombre": 1})}
+    plantillas_map = {str(p["_id"]): p for p in db["service_packages"].find({}, {"_id": 1, "nombre": 1})}
+
+    rows = []
+    for cp in db["client_packages"].find({}):
+        cli = clients_map.get(str(cp.get("client_id", "")), {})
+        uid = str(cli.get("user_id", ""))
+        fdt = _to_dt(cp.get("comprado_en"))
+        usos_totales   = _num(cp.get("usos_totales"))
+        usos_restantes = _num(cp.get("usos_restantes"))
+        rows.append({
+            "cliente":         users_map.get(uid, {}).get("name", "Cliente"),
+            "nivel":           str(cli.get("nivel", "regular")),
+            "paquete":         plantillas_map.get(str(cp.get("service_package_id", "")), {}).get("nombre", "Desconocido"),
+            "servicio":        services_map.get(str(cp.get("service_id", "")), {}).get("nombre", "Desconocido"),
+            "usos_totales":    usos_totales,
+            "usos_restantes":  usos_restantes,
+            "usos_consumidos": usos_totales - usos_restantes,
+            "precio_pagado":   _num(cp.get("precio_pagado")),
+            "metodo_pago":     str(cp.get("metodo_pago", "")),
+            "estado":          str(cp.get("estado", "")),
+            "mes":             fdt.month if fdt else 0,
+            "anio":            fdt.year if fdt else 0,
+        })
+    client.close()
+    return pd.DataFrame(rows)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: COMBOS (coleccion `service_combos` + pivote `combo_service`) —
+# catalogo de varios servicios a precio conjunto (definido por admin, no
+# hay una instancia "comprada" como ClientPackage)
+# ─────────────────────────────────────────────────────────────────────────────
+def get_combos_df():
+    """Catalogo de combos (ServiceCombo): precio conjunto, descuento y
+    cuantos servicios incluye (cuenta del pivote `combo_service`, campos
+    reales `combo_id`/`service_id` — ver ServiceCombo::services())."""
+    client, database = _connect_db()
+    db = client[database]
+    conteo = {}
+    for row in db["combo_service"].find({}):
+        cid = str(row.get("combo_id", ""))
+        conteo[cid] = conteo.get(cid, 0) + 1
+
+    rows = []
+    for c in db["service_combos"].find({}):
+        rows.append({
+            "combo":         str(c.get("nombre", "Desconocido")),
+            "precio_combo":  _num(c.get("precio_combo")),
+            "descuento":     _num(c.get("descuento")),
+            "num_servicios": conteo.get(str(c["_id"]), 0),
+        })
+    client.close()
+    return pd.DataFrame(rows)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: REFERIDOS (coleccion `referrals`)
+# ─────────────────────────────────────────────────────────────────────────────
+def get_referidos_df():
+    """Un renglon por referido (Referral): quien invito (referrer) a quien
+    (referee) y si ya se otorgo la recompensa — solo pasa cuando el referido
+    completa su PRIMERA cita, nunca por solo registrarse."""
+    client, database = _connect_db()
+    db = client[database]
+    clients_map = {str(c["_id"]): c for c in db["clients"].find({}, {"_id": 1, "user_id": 1})}
+    users_map   = {str(u["_id"]): u for u in db["users"].find({}, {"_id": 1, "name": 1})}
+
+    def nombre_cliente(cid):
+        cli = clients_map.get(str(cid), {})
+        return users_map.get(str(cli.get("user_id", "")), {}).get("name", "Cliente")
+
+    rows = []
+    for r in db["referrals"].find({}):
+        fdt = _to_dt(r.get("recompensa_otorgada_en"))
+        rows.append({
+            "referente":           nombre_cliente(r.get("referrer_client_id")),
+            "referido":            nombre_cliente(r.get("referee_client_id")),
+            "estado":              str(r.get("estado", "pendiente")),
+            "recompensa_otorgada": fdt is not None,
+            "mes":                 fdt.month if fdt else 0,
+            "anio":                fdt.year if fdt else 0,
+        })
+    client.close()
+    return pd.DataFrame(rows)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: LISTA DE ESPERA (coleccion `waitlists`)
+# ─────────────────────────────────────────────────────────────────────────────
+def get_waitlist_df():
+    """Un renglon por entrada en lista de espera (Waitlist): cliente,
+    barbero, servicio, fecha deseada y estado (activo/notificado/reservado/
+    cancelado/expirado)."""
+    client, database = _connect_db()
+    db = client[database]
+    clients_map  = {str(c["_id"]): c for c in db["clients"].find({}, {"_id": 1, "user_id": 1})}
+    barbers_map  = {str(b["_id"]): b for b in db["barbers"].find({}, {"_id": 1, "user_id": 1, "nombre": 1})}
+    services_map = {str(s["_id"]): s for s in db["services"].find({}, {"_id": 1, "nombre": 1})}
+    users_map    = {str(u["_id"]): u for u in db["users"].find({}, {"_id": 1, "name": 1})}
+
+    rows = []
+    for w in db["waitlists"].find({}):
+        cli = clients_map.get(str(w.get("client_id", "")), {})
+        uid = str(cli.get("user_id", ""))
+        rows.append({
+            "cliente":  users_map.get(uid, {}).get("name", "Cliente"),
+            "barbero":  _resolve_barbero(barbers_map.get(str(w.get("barber_id", "")), {}), users_map),
+            "servicio": services_map.get(str(w.get("service_id", "")), {}).get("nombre", "Desconocido"),
+            "fecha":    str(w.get("fecha", ""))[:10],
+            "estado":   str(w.get("estado", "")),
+            "activa":   bool(w.get("activa", False)),
+        })
+    client.close()
+    return pd.DataFrame(rows)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: RIFAS (coleccion `raffle_results`) — sorteo mensual de lealtad
+# ─────────────────────────────────────────────────────────────────────────────
+def get_rifas_df():
+    """Resultados del sorteo mensual (RaffleResult): quien gano que premio y
+    si ya lo reclamo o caduco sin usarse (VIGENCIA_DIAS=60 desde que se gana)."""
+    client, database = _connect_db()
+    db = client[database]
+    clients_map = {str(c["_id"]): c for c in db["clients"].find({}, {"_id": 1, "user_id": 1})}
+    users_map   = {str(u["_id"]): u for u in db["users"].find({}, {"_id": 1, "name": 1})}
+
+    now = datetime.now()
+    rows = []
+    for r in db["raffle_results"].find({}):
+        cli = clients_map.get(str(r.get("client_id", "")), {})
+        uid = str(cli.get("user_id", ""))
+        reclamado = r.get("reclamado_en") is not None
+        vence_en  = _to_dt(r.get("vence_en"))
+        vencido   = (not reclamado) and (vence_en is not None) and (vence_en < now)
+        rows.append({
+            "cliente":       users_map.get(uid, {}).get("name", "Cliente"),
+            "mes":           str(r.get("mes", "")),
+            "premio":        str(r.get("premio", "")),
+            "nivel_ganador": str(r.get("nivel_ganador", "")),
+            "reclamado":     reclamado,
+            "vencido":       vencido,
+        })
+    client.close()
+    return pd.DataFrame(rows)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: RESEÑAS DE BARBEROS (coleccion `barber_reviews`) — distinto del
+# muro social (Work/Comment), ver get_publicaciones_df()
+# ─────────────────────────────────────────────────────────────────────────────
+def get_resenas_df():
+    """Reseñas de clientes sobre barberos (BarberReview: rating 1-5 +
+    comentario libre)."""
+    client, database = _connect_db()
+    db = client[database]
+    barbers_map = {str(b["_id"]): b for b in db["barbers"].find({}, {"_id": 1, "user_id": 1, "nombre": 1})}
+    clients_map = {str(c["_id"]): c for c in db["clients"].find({}, {"_id": 1, "user_id": 1})}
+    users_map   = {str(u["_id"]): u for u in db["users"].find({}, {"_id": 1, "name": 1})}
+
+    rows = []
+    for r in db["barber_reviews"].find({}):
+        cli = clients_map.get(str(r.get("client_id", "")), {})
+        rows.append({
+            "barbero": _resolve_barbero(barbers_map.get(str(r.get("barber_id", "")), {}), users_map),
+            "cliente": users_map.get(str(cli.get("user_id", "")), {}).get("name", "Cliente"),
+            "rating":  _num(r.get("rating")),
+            "comment": str(r.get("comment", "") or ""),
+        })
+    client.close()
+    return pd.DataFrame(rows)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
