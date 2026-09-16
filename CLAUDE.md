@@ -59,6 +59,8 @@ See `unidades/README.md` for the per-unit deliverable checklist and
 - Never commit `.env` (MongoDB Atlas credentials) — use `.env.example` as template.
 - All new data-access code should go through `config/mongo_spark_conexion_sinnulos.py`,
   not the legacy connector.
+- Ningún proveedor de IA ejecuta `git commit`, `git push`, merge, rebase ni publica PR.
+  La IA valida y entrega un mensaje de commit en español; el usuario realiza Git.
 
 ## Guardrails (read before writing to MongoDB or touching Laravel-side flows)
 
