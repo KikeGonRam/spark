@@ -25,6 +25,10 @@ from config.mongo_spark_conexion_sinnulos import (
     get_pagos_df, get_loyalty_df, get_horarios_df, get_utilizacion_barberos_df,
     get_productos_df, get_pedidos_df, get_top_productos_df, get_publicaciones_df,
     PAGO_ESTADO_VERIFICADO,
+    get_giftcards_df, get_paquetes_df, get_combos_df,
+    get_membresias_df, get_membership_invoices_df,
+    get_referidos_df, get_rifas_df, get_waitlist_df,
+    get_comisiones_df, get_resenas_df,
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -422,6 +426,26 @@ def analizar_publicaciones(_spark):
         return None
     return pub_sdf.toPandas()
 
+@st.cache_resource(show_spinner="Cargando gift cards, paquetes y combos…")
+def analizar_giftcards_paquetes():
+    return get_giftcards_df(), get_paquetes_df(), get_combos_df()
+
+@st.cache_resource(show_spinner="Analizando membresías…")
+def analizar_membresias():
+    return get_membresias_df(), get_membership_invoices_df()
+
+@st.cache_resource(show_spinner="Analizando referidos y rifas…")
+def analizar_referidos_rifas():
+    return get_referidos_df(), get_rifas_df()
+
+@st.cache_resource(show_spinner="Cargando lista de espera…")
+def analizar_waitlist():
+    return get_waitlist_df()
+
+@st.cache_resource(show_spinner="Calculando comisiones y reseñas de barberos…")
+def analizar_comisiones_resenas(_df_pandas):
+    return get_comisiones_df(_df_pandas), get_resenas_df()
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
@@ -511,8 +535,8 @@ st.divider()
 # muestran (15 pestañas a la vez desbordan la barra en una exposición).
 # 'Resumen Ejecutivo' se incluye en todos los grupos como ancla.
 _TAB_GROUPS = {
-    "Todas las unidades": ['Resumen Ejecutivo', 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario', 'Tienda y Pedidos', 'Publicaciones', 'Regresion', 'Arbol de Decision', 'Random Forest', 'Churn / Abandono', 'Demanda', 'KMeans', 'PCA', 'Segmentacion Clientes', 'Recomendacion'],
-    "Unidad II — Preparación": ['Resumen Ejecutivo', 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario', 'Tienda y Pedidos', 'Publicaciones'],
+    "Todas las unidades": ['Resumen Ejecutivo', 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario', 'Tienda y Pedidos', 'Publicaciones', 'Gift Cards y Paquetes', 'Membresias', 'Referidos y Rifas', 'Lista de Espera', 'Comisiones y Reseñas', 'Regresion', 'Arbol de Decision', 'Random Forest', 'Churn / Abandono', 'Demanda', 'KMeans', 'PCA', 'Segmentacion Clientes', 'Recomendacion'],
+    "Unidad II — Preparación": ['Resumen Ejecutivo', 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario', 'Tienda y Pedidos', 'Publicaciones', 'Gift Cards y Paquetes', 'Membresias', 'Referidos y Rifas', 'Lista de Espera', 'Comisiones y Reseñas'],
     "Unidad III — Supervisado": ['Resumen Ejecutivo', 'Regresion', 'Arbol de Decision', 'Random Forest', 'Churn / Abandono', 'Demanda'],
     "Unidad IV — No supervisado": ['Resumen Ejecutivo', 'KMeans', 'PCA', 'Segmentacion Clientes', 'Recomendacion'],
 }
@@ -935,6 +959,222 @@ if "Publicaciones" in _visible:
                 st.info(f"Correlación engagement vs citas completadas: {correlacion:.2f}. "
                         f"{n_sin_posts} barbero(s) sin ninguna publicación todavía.",
                         icon=":material/info:")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — GIFT CARDS, PAQUETES Y COMBOS
+# ══════════════════════════════════════════════════════════════════════════════
+if "Gift Cards y Paquetes" in _visible:
+    with tabs[_visible.index("Gift Cards y Paquetes")]:
+        st.subheader("Unidad II — Gift Cards, Paquetes y Combos")
+        st.caption("Colecciones `gift_cards` / `client_packages` / `service_combos` — crédito prepagado y ofertas empaquetadas")
+
+        gc_pdf, pq_pdf, combo_pdf = analizar_giftcards_paquetes()
+
+        st.markdown("#### Gift Cards")
+        if gc_pdf is None or gc_pdf.empty:
+            st.info("Sin gift cards vendidas todavía.", icon=":material/info:")
+        else:
+            vendido = gc_pdf["monto_inicial"].sum()
+            saldo_vivo = gc_pdf[gc_pdf["estado"] == "activa"]["saldo"].sum()
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Gift cards vendidas", len(gc_pdf))
+            c2.metric("Monto vendido", f"${vendido:,.0f}")
+            c3.metric("Saldo vivo (activas)", f"${saldo_vivo:,.0f}")
+            c4.metric("% consumido promedio", f"{gc_pdf['pct_usado'].mean():.0f}%")
+
+            col_a, col_b = st.columns(2)
+            with col_a:
+                fig = px.pie(gc_pdf, names="estado", title="Gift cards por estado", hole=0.45,
+                             color_discrete_sequence=px.colors.qualitative.Set2)
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig, use_container_width=True)
+            with col_b:
+                fig2 = px.histogram(gc_pdf, x="monto_inicial", nbins=20, title="Distribución del monto comprado",
+                                    color_discrete_sequence=[GOLD])
+                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig2, use_container_width=True)
+
+        st.markdown("#### Paquetes prepagados")
+        if pq_pdf is None or pq_pdf.empty:
+            st.info("Sin paquetes comprados todavía.", icon=":material/info:")
+        else:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Paquetes vendidos", len(pq_pdf))
+            c2.metric("Ingreso por paquetes", f"${pq_pdf['precio_pagado'].sum():,.0f}")
+            c3.metric("Usos consumidos", int(pq_pdf["usos_consumidos"].sum()))
+
+            top_paquetes = pq_pdf.groupby("paquete").size().reset_index(name="ventas").sort_values("ventas", ascending=False)
+            fig3 = px.bar(top_paquetes, x="ventas", y="paquete", orientation="h", title="Paquetes más vendidos",
+                          color="ventas", color_continuous_scale=[[0, "#333"], [1, BLUE]])
+            fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig3, use_container_width=True)
+
+        st.markdown("#### Combos (catálogo)")
+        if combo_pdf is None or combo_pdf.empty:
+            st.info("Sin combos configurados todavía.", icon=":material/info:")
+        else:
+            st.dataframe(combo_pdf.rename(columns={
+                "combo": "Combo", "precio_combo": "Precio", "descuento": "Descuento",
+                "num_servicios": "N° servicios incluidos"}),
+                use_container_width=True, hide_index=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — MEMBRESÍAS
+# ══════════════════════════════════════════════════════════════════════════════
+if "Membresias" in _visible:
+    with tabs[_visible.index("Membresias")]:
+        st.subheader("Unidad II — Membresías Recurrentes")
+        st.caption("Colecciones `client_memberships` / `membership_plans` / `membership_invoices` — suscripción vía Stripe")
+
+        mem_pdf, inv_pdf = analizar_membresias()
+        if mem_pdf is None or mem_pdf.empty:
+            st.warning("Sin membresías contratadas todavía.")
+        else:
+            activas = mem_pdf[mem_pdf["estado"] == "activa"]
+            mrr = (activas["precio_mensual"]).sum()
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Suscripciones", len(mem_pdf))
+            c2.metric("Activas", len(activas))
+            c3.metric("MRR (activas)", f"${mrr:,.0f}")
+            c4.metric("Se cancelarán al finalizar", int(activas["cancelar_al_finalizar"].sum()))
+
+            col_a, col_b = st.columns(2)
+            with col_a:
+                fig = px.pie(mem_pdf, names="estado", title="Suscripciones por estado", hole=0.45,
+                             color_discrete_sequence=px.colors.qualitative.Set2)
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig, use_container_width=True)
+            with col_b:
+                por_plan = mem_pdf.groupby("plan").size().reset_index(name="suscriptores")
+                fig2 = px.bar(por_plan, x="plan", y="suscriptores", title="Suscriptores por plan",
+                              color="suscriptores", color_continuous_scale=[[0, "#333"], [1, GOLD]])
+                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                   font_color="white", coloraxis_showscale=False)
+                st.plotly_chart(fig2, use_container_width=True)
+
+            st.markdown("#### Cobros (facturas)")
+            if inv_pdf is None or inv_pdf.empty:
+                st.info("Sin cobros de membresía registrados todavía.", icon=":material/info:")
+            else:
+                st.metric("Ingreso total por membresías", f"${inv_pdf['monto'].sum():,.0f}")
+                st.dataframe(inv_pdf.rename(columns={"cliente": "Cliente", "plan": "Plan", "monto": "Monto"}),
+                             use_container_width=True, hide_index=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — REFERIDOS Y RIFAS
+# ══════════════════════════════════════════════════════════════════════════════
+if "Referidos y Rifas" in _visible:
+    with tabs[_visible.index("Referidos y Rifas")]:
+        st.subheader("Unidad II — Referidos y Rifa Mensual")
+        st.caption("Colecciones `referrals` / `raffle_results` — crecimiento por boca a boca y sorteo de lealtad")
+
+        ref_pdf, rifa_pdf = analizar_referidos_rifas()
+
+        st.markdown("#### Referidos")
+        if ref_pdf is None or ref_pdf.empty:
+            st.info("Sin referidos registrados todavía.", icon=":material/info:")
+        else:
+            completados = ref_pdf[ref_pdf["estado"] == "completado"]
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Referidos totales", len(ref_pdf))
+            c2.metric("Completados", len(completados))
+            c3.metric("Tasa de conversión", f"{len(completados)/len(ref_pdf)*100:.0f}%")
+
+            top_referentes = ref_pdf.groupby("referente").size().reset_index(name="referidos").sort_values("referidos", ascending=False).head(10)
+            fig = px.bar(top_referentes, x="referidos", y="referente", orientation="h",
+                         title="Top referentes (clientes que más invitan)",
+                         color="referidos", color_continuous_scale=[[0, "#333"], [1, GREEN]])
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown("#### Rifa mensual de lealtad")
+        if rifa_pdf is None or rifa_pdf.empty:
+            st.info("Sin resultados de rifa todavía.", icon=":material/info:")
+        else:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Premios entregados", len(rifa_pdf))
+            c2.metric("Reclamados", int(rifa_pdf["reclamado"].sum()))
+            c3.metric("Caducados sin reclamar", int(rifa_pdf["vencido"].sum()))
+            st.dataframe(rifa_pdf.rename(columns={
+                "cliente": "Cliente", "mes": "Mes", "premio": "Premio",
+                "nivel_ganador": "Nivel", "reclamado": "Reclamado", "vencido": "Vencido"}),
+                use_container_width=True, hide_index=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — LISTA DE ESPERA
+# ══════════════════════════════════════════════════════════════════════════════
+if "Lista de Espera" in _visible:
+    with tabs[_visible.index("Lista de Espera")]:
+        st.subheader("Unidad II — Lista de Espera")
+        st.caption("Colección `waitlists` — clientes anotados cuando un barbero/servicio/fecha ya no tiene horarios")
+
+        wl_pdf = analizar_waitlist()
+        if wl_pdf is None or wl_pdf.empty:
+            st.warning("Sin entradas en lista de espera todavía.")
+        else:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Entradas totales", len(wl_pdf))
+            c2.metric("Activas ahora", int(wl_pdf["activa"].sum()))
+            c3.metric("Reservadas (convirtieron)", int((wl_pdf["estado"] == "reservado").sum()))
+
+            col_a, col_b = st.columns(2)
+            with col_a:
+                fig = px.pie(wl_pdf, names="estado", title="Entradas por estado", hole=0.45,
+                             color_discrete_sequence=px.colors.qualitative.Set2)
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig, use_container_width=True)
+            with col_b:
+                demanda = wl_pdf.groupby(["barbero", "servicio"]).size().reset_index(name="anotados").sort_values("anotados", ascending=False).head(10)
+                fig2 = px.bar(demanda, x="anotados", y="barbero", orientation="h", color="servicio",
+                              title="Mayor demanda insatisfecha (barbero + servicio)",
+                              color_discrete_sequence=px.colors.qualitative.Set2)
+                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                   font_color="white", yaxis=dict(autorange="reversed"))
+                st.plotly_chart(fig2, use_container_width=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — COMISIONES Y RESEÑAS
+# ══════════════════════════════════════════════════════════════════════════════
+if "Comisiones y Reseñas" in _visible:
+    with tabs[_visible.index("Comisiones y Reseñas")]:
+        st.subheader("Unidad II — Comisiones de Barberos y Reseñas")
+        st.caption("`barbers.comision_pct` × ingreso real, y colección `barber_reviews` — desempeño individual por barbero")
+
+        com_pdf, res_pdf = analizar_comisiones_resenas(pdf)
+
+        st.markdown("#### Comisiones")
+        if com_pdf is None or com_pdf.empty:
+            st.info("Sin barberos con comisión configurada, o sin citas todavía.", icon=":material/info:")
+        else:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Barberos", len(com_pdf))
+            c2.metric("Comisión total del periodo", f"${com_pdf['comision_ganada'].sum():,.0f}")
+            c3.metric("Comisión promedio", f"{com_pdf['comision_pct'].mean():.1f}%")
+
+            top_comision = com_pdf.sort_values("comision_ganada", ascending=False).head(10)
+            fig = px.bar(top_comision, x="comision_ganada", y="barbero", orientation="h",
+                         title="Top 10 barberos por comisión ganada",
+                         color="comision_ganada", color_continuous_scale=[[0, "#333"], [1, GOLD]])
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown("#### Reseñas de clientes")
+        if res_pdf is None or res_pdf.empty:
+            st.info("Sin reseñas registradas todavía.", icon=":material/info:")
+        else:
+            c1, c2 = st.columns(2)
+            c1.metric("Reseñas totales", len(res_pdf))
+            c2.metric("Rating promedio", f"{res_pdf['rating'].mean():.1f} / 5")
+
+            rating_barbero = res_pdf.groupby("barbero")["rating"].mean().reset_index().sort_values("rating", ascending=False)
+            fig2 = px.bar(rating_barbero, x="rating", y="barbero", orientation="h", title="Rating promedio por barbero",
+                          color="rating", color_continuous_scale=[[0, "#333"], [1, GREEN]], range_x=[0, 5])
+            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig2, use_container_width=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 7 — REGRESIÓN
