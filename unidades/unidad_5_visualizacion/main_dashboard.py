@@ -34,9 +34,11 @@ from config.mongo_spark_conexion_sinnulos import (
 # ─────────────────────────────────────────────────────────────────────────────
 # CONFIGURACIÓN
 # ─────────────────────────────────────────────────────────────────────────────
+_LOGO_PATH = os.path.join(os.path.dirname(__file__), "assets", "urbanblade-logo.png")
+
 st.set_page_config(
     page_title="UrbanBlade Analytics",
-    page_icon="UB",
+    page_icon=_LOGO_PATH,
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -450,19 +452,16 @@ def analizar_comisiones_resenas(_df_pandas):
 # SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown(f"<h1 style='color:{GOLD};font-size:28px;margin-bottom:0'><i class='fas fa-scissors'></i>&nbsp; UrbanBlade</h1>", unsafe_allow_html=True)
-    st.caption("Extracción del conocimiento en BD · UTVT IDGS-93")
-    st.divider()
-    st.markdown("**Equipo:** Equipo UrbanBlade")
-    st.markdown("**Docente:** MGTI. Héctor Velázquez Estrada")
-    st.markdown("**Período:** Mayo–Agosto 2026")
+    st.image(_LOGO_PATH, width=88)
+    st.markdown(f"<h1 style='color:{GOLD};font-size:26px;margin-top:6px;margin-bottom:0'>UrbanBlade</h1>", unsafe_allow_html=True)
+    st.caption("Analítica de negocio en tiempo real")
     st.divider()
     st.markdown("**Filtros**")
-    unidad_sel = st.radio(
-        "Unidad",
-        ["Todas las unidades", "Unidad II — Preparación",
-         "Unidad III — Supervisado", "Unidad IV — No supervisado"],
-        help="Filtra qué pestañas se muestran — útil para exponer una unidad a la vez",
+    vista_sel = st.radio(
+        "Sección",
+        ["Todo el panel", "Operación y Datos",
+         "Modelos Predictivos", "Segmentación y Patrones"],
+        help="Filtra qué pestañas se muestran — útil para exponer una sección a la vez",
     )
     k_clusters = st.slider("Clusters KMeans (K)", 2, 8, 3)
     st.divider()
@@ -489,16 +488,16 @@ except Exception as e:
 # este flag en vez de intentarlo directamente.
 hay_citas = len(pdf) > 0
 if not hay_citas:
-    st.warning("**barber_db no tiene citas registradas todavía.** El resumen ejecutivo, "
-               "Unidad III (supervisado) y Unidad IV (no supervisado) requieren al menos "
-               "algunas citas reales para entrenar los modelos — aparecerán automáticamente "
-               "en cuanto existan datos.", icon=":material/warning:")
+    st.warning("**barber_db no tiene citas registradas todavía.** El resumen ejecutivo y los "
+               "modelos predictivos y de segmentación requieren al menos algunas citas reales "
+               "para entrenar — aparecerán automáticamente en cuanto existan datos.",
+               icon=":material/warning:")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HEADER + KPIs GLOBALES
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown(f"<h1 style='text-align:center;color:{GOLD};font-size:2.2rem;'><i class='fas fa-scissors'></i>&nbsp; UrbanBlade Analytics Dashboard</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align:center;color:#888;margin-top:-10px;'>Extracción del conocimiento en bases de datos · Datos reales MongoDB Atlas</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center;color:#888;margin-top:-10px;'>Panel de inteligencia de negocio · Datos en tiempo real desde MongoDB Atlas</p>", unsafe_allow_html=True)
 st.divider()
 
 c1, c2, c3, c4, c5, c6 = st.columns(6)
@@ -535,12 +534,12 @@ st.divider()
 # muestran (15 pestañas a la vez desbordan la barra en una exposición).
 # 'Resumen Ejecutivo' se incluye en todos los grupos como ancla.
 _TAB_GROUPS = {
-    "Todas las unidades": ['Resumen Ejecutivo', 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario', 'Tienda y Pedidos', 'Publicaciones', 'Gift Cards y Paquetes', 'Membresias', 'Referidos y Rifas', 'Lista de Espera', 'Comisiones y Reseñas', 'Regresion', 'Arbol de Decision', 'Random Forest', 'Churn / Abandono', 'Demanda', 'KMeans', 'PCA', 'Segmentacion Clientes', 'Recomendacion'],
-    "Unidad II — Preparación": ['Resumen Ejecutivo', 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario', 'Tienda y Pedidos', 'Publicaciones', 'Gift Cards y Paquetes', 'Membresias', 'Referidos y Rifas', 'Lista de Espera', 'Comisiones y Reseñas'],
-    "Unidad III — Supervisado": ['Resumen Ejecutivo', 'Regresion', 'Arbol de Decision', 'Random Forest', 'Churn / Abandono', 'Demanda'],
-    "Unidad IV — No supervisado": ['Resumen Ejecutivo', 'KMeans', 'PCA', 'Segmentacion Clientes', 'Recomendacion'],
+    "Todo el panel": ['Resumen Ejecutivo', 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario', 'Tienda y Pedidos', 'Publicaciones', 'Gift Cards y Paquetes', 'Membresias', 'Referidos y Rifas', 'Lista de Espera', 'Comisiones y Reseñas', 'Regresion', 'Arbol de Decision', 'Random Forest', 'Churn / Abandono', 'Demanda', 'KMeans', 'PCA', 'Segmentacion Clientes', 'Recomendacion'],
+    "Operación y Datos": ['Resumen Ejecutivo', 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario', 'Tienda y Pedidos', 'Publicaciones', 'Gift Cards y Paquetes', 'Membresias', 'Referidos y Rifas', 'Lista de Espera', 'Comisiones y Reseñas'],
+    "Modelos Predictivos": ['Resumen Ejecutivo', 'Regresion', 'Arbol de Decision', 'Random Forest', 'Churn / Abandono', 'Demanda'],
+    "Segmentación y Patrones": ['Resumen Ejecutivo', 'KMeans', 'PCA', 'Segmentacion Clientes', 'Recomendacion'],
 }
-_visible = _TAB_GROUPS[unidad_sel]
+_visible = _TAB_GROUPS[vista_sel]
 tabs = st.tabs(_visible)
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -605,7 +604,7 @@ if "Resumen Ejecutivo" in _visible:
 # ══════════════════════════════════════════════════════════════════════════════
 if "MapReduce / ETL" in _visible:
     with tabs[_visible.index("MapReduce / ETL")]:
-        st.subheader("Unidad II — MapReduce / ETL Distribuido")
+        st.subheader("Procesamiento Distribuido (MapReduce / ETL)")
         st.caption("MAP → agrupa | REDUCE → agrega métricas por servicio y barbero")
 
         resumen = pdf.groupby("servicio").agg(
@@ -669,7 +668,7 @@ if "MapReduce / ETL" in _visible:
 # ══════════════════════════════════════════════════════════════════════════════
 if "Pagos y Calidad" in _visible:
     with tabs[_visible.index("Pagos y Calidad")]:
-        st.subheader("Unidad II — Pagos y Calidad de Datos")
+        st.subheader("Pagos y Calidad de Datos")
         st.caption("Colección `payments` (11,016 docs) — reconciliación de cobros y métodos de pago")
 
         pagos_pdf = analizar_pagos(spark)
@@ -728,7 +727,7 @@ if "Pagos y Calidad" in _visible:
 # ══════════════════════════════════════════════════════════════════════════════
 if "Fidelizacion" in _visible:
     with tabs[_visible.index("Fidelizacion")]:
-        st.subheader("Unidad II — Programa de Fidelización")
+        st.subheader("Programa de Fidelización")
         st.caption("Colección `loyalty_transactions` (11,016 docs) — puntos ganados por cliente")
 
         loy_pdf = analizar_fidelizacion(spark)
@@ -774,7 +773,7 @@ if "Fidelizacion" in _visible:
 # ══════════════════════════════════════════════════════════════════════════════
 if "Utilizacion Barberos" in _visible:
     with tabs[_visible.index("Utilizacion Barberos")]:
-        st.subheader("Unidad II — Utilización de Barberos (oferta vs demanda)")
+        st.subheader("Utilización de Barberos (oferta vs demanda)")
         st.caption("Colección `barber_schedules` (175 docs) — horas disponibles vs horas ocupadas")
 
         horarios, util = analizar_utilizacion(pdf)
@@ -819,7 +818,7 @@ if "Utilizacion Barberos" in _visible:
 # ══════════════════════════════════════════════════════════════════════════════
 if "Inventario" in _visible:
     with tabs[_visible.index("Inventario")]:
-        st.subheader("Unidad II — Salud del Inventario")
+        st.subheader("Salud del Inventario")
         st.caption("Colección `products` (31 docs) — stock, márgenes y categorías")
 
         productos = analizar_inventario()
@@ -865,7 +864,7 @@ if "Inventario" in _visible:
 # ══════════════════════════════════════════════════════════════════════════════
 if "Tienda y Pedidos" in _visible:
     with tabs[_visible.index("Tienda y Pedidos")]:
-        st.subheader("Unidad II — Pedidos de Tienda (colección `orders`)")
+        st.subheader("Pedidos de Tienda")
         st.caption("Add-ons de cita ('cita') vs compras sueltas ('tienda') — checkout de productos")
 
         pedidos_pdf, top_pdf = analizar_pedidos(spark)
@@ -922,7 +921,7 @@ if "Tienda y Pedidos" in _visible:
 # ══════════════════════════════════════════════════════════════════════════════
 if "Publicaciones" in _visible:
     with tabs[_visible.index("Publicaciones")]:
-        st.subheader("Unidad II — Engagement del Muro de Inspiración")
+        st.subheader("Engagement del Muro de Inspiración")
         st.caption("Colecciones `works` / `work_images` / `comments` / `reactions` — portafolio social por barbero")
 
         pub_pdf = analizar_publicaciones(spark)
@@ -965,7 +964,7 @@ if "Publicaciones" in _visible:
 # ══════════════════════════════════════════════════════════════════════════════
 if "Gift Cards y Paquetes" in _visible:
     with tabs[_visible.index("Gift Cards y Paquetes")]:
-        st.subheader("Unidad II — Gift Cards, Paquetes y Combos")
+        st.subheader("Gift Cards, Paquetes y Combos")
         st.caption("Colecciones `gift_cards` / `client_packages` / `service_combos` — crédito prepagado y ofertas empaquetadas")
 
         gc_pdf, pq_pdf, combo_pdf = analizar_giftcards_paquetes()
@@ -1024,7 +1023,7 @@ if "Gift Cards y Paquetes" in _visible:
 # ══════════════════════════════════════════════════════════════════════════════
 if "Membresias" in _visible:
     with tabs[_visible.index("Membresias")]:
-        st.subheader("Unidad II — Membresías Recurrentes")
+        st.subheader("Membresías Recurrentes")
         st.caption("Colecciones `client_memberships` / `membership_plans` / `membership_invoices` — suscripción vía Stripe")
 
         mem_pdf, inv_pdf = analizar_membresias()
@@ -1066,7 +1065,7 @@ if "Membresias" in _visible:
 # ══════════════════════════════════════════════════════════════════════════════
 if "Referidos y Rifas" in _visible:
     with tabs[_visible.index("Referidos y Rifas")]:
-        st.subheader("Unidad II — Referidos y Rifa Mensual")
+        st.subheader("Referidos y Rifa Mensual")
         st.caption("Colecciones `referrals` / `raffle_results` — crecimiento por boca a boca y sorteo de lealtad")
 
         ref_pdf, rifa_pdf = analizar_referidos_rifas()
@@ -1107,7 +1106,7 @@ if "Referidos y Rifas" in _visible:
 # ══════════════════════════════════════════════════════════════════════════════
 if "Lista de Espera" in _visible:
     with tabs[_visible.index("Lista de Espera")]:
-        st.subheader("Unidad II — Lista de Espera")
+        st.subheader("Lista de Espera")
         st.caption("Colección `waitlists` — clientes anotados cuando un barbero/servicio/fecha ya no tiene horarios")
 
         wl_pdf = analizar_waitlist()
@@ -1139,7 +1138,7 @@ if "Lista de Espera" in _visible:
 # ══════════════════════════════════════════════════════════════════════════════
 if "Comisiones y Reseñas" in _visible:
     with tabs[_visible.index("Comisiones y Reseñas")]:
-        st.subheader("Unidad II — Comisiones de Barberos y Reseñas")
+        st.subheader("Comisiones de Barberos y Reseñas")
         st.caption("`barbers.comision_pct` × ingreso real, y colección `barber_reviews` — desempeño individual por barbero")
 
         com_pdf, res_pdf = analizar_comisiones_resenas(pdf)
@@ -1181,7 +1180,7 @@ if "Comisiones y Reseñas" in _visible:
 # ══════════════════════════════════════════════════════════════════════════════
 if "Regresion" in _visible:
     with tabs[_visible.index("Regresion")]:
-        st.subheader("Unidad III — Análisis Supervisado: Regresión")
+        st.subheader("Predicción de Ingresos (Regresión)")
         st.caption("Predicción de la FACTURACIÓN DIARIA (target real, sin fuga) · 6 modelos · R², MSE, MAE")
         if not hay_citas:
             st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
@@ -1251,7 +1250,7 @@ if "Regresion" in _visible:
 # ══════════════════════════════════════════════════════════════════════════════
 if "Arbol de Decision" in _visible:
     with tabs[_visible.index("Arbol de Decision")]:
-        st.subheader("Unidad III — Árbol de Decisión")
+        st.subheader("Árbol de Decisión — Predicción de Cancelaciones")
         st.caption("Clasificación honesta: ¿se CANCELARÁ la cita?  1 = cancelada  |  0 = resto  ·  clases desbalanceadas → AUC")
 
         if not hay_citas:
@@ -1331,7 +1330,7 @@ if "Arbol de Decision" in _visible:
 # ══════════════════════════════════════════════════════════════════════════════
 if "Random Forest" in _visible:
     with tabs[_visible.index("Random Forest")]:
-        st.subheader("Unidad III — Random Forest")
+        st.subheader("Random Forest — Predicción de Cancelaciones")
         st.caption("Mismo problema que el Árbol (cancelación) pero con 100 árboles → comparar AUC: el bosque suele ganar")
 
         if not hay_citas:
@@ -1400,7 +1399,7 @@ if "Random Forest" in _visible:
 # ══════════════════════════════════════════════════════════════════════════════
 if "Churn / Abandono" in _visible:
     with tabs[_visible.index("Churn / Abandono")]:
-        st.subheader("Unidad III — Predicción de Abandono (Churn)")
+        st.subheader("Predicción de Abandono (Churn)")
         st.caption("Random Forest · churn = cliente con recencia > percentil 70 · features SIN la recencia (sin fuga)")
 
         if not hay_citas:
@@ -1443,7 +1442,7 @@ if "Churn / Abandono" in _visible:
 # ══════════════════════════════════════════════════════════════════════════════
 if "Demanda" in _visible:
     with tabs[_visible.index("Demanda")]:
-        st.subheader("Unidad III — Predicción de Demanda y Horarios")
+        st.subheader("Predicción de Demanda y Horarios")
         st.caption("Regresión supervisada (GBT): ¿cuántas citas esperar por hora, día y mes?")
 
         if not hay_citas:
@@ -1499,7 +1498,7 @@ if "Demanda" in _visible:
 # ══════════════════════════════════════════════════════════════════════════════
 if "KMeans" in _visible:
     with tabs[_visible.index("KMeans")]:
-        st.subheader("Unidad IV — KMeans Clustering")
+        st.subheader("Segmentación de Citas (KMeans)")
         st.caption("Segmentación no supervisada de citas por duración, precio e ingreso")
 
         if not hay_citas:
@@ -1568,7 +1567,7 @@ if "KMeans" in _visible:
 # ══════════════════════════════════════════════════════════════════════════════
 if "PCA" in _visible:
     with tabs[_visible.index("PCA")]:
-        st.subheader("Unidad IV — PCA + KMeans")
+        st.subheader("Reducción de Dimensionalidad (PCA + KMeans)")
         st.caption("Reducción de dimensionalidad: 3 features → 2 componentes principales → clustering")
 
         if not hay_citas:
@@ -1654,7 +1653,7 @@ if "PCA" in _visible:
 # ══════════════════════════════════════════════════════════════════════════════
 if "Segmentacion Clientes" in _visible:
     with tabs[_visible.index("Segmentacion Clientes")]:
-        st.subheader("Unidad IV — Segmentación de Clientes (RFM + KMeans)")
+        st.subheader("Segmentación de Clientes (RFM + KMeans)")
         st.caption("1000 clientes reales agrupados en 4 segmentos por comportamiento de consumo")
 
         if not hay_citas:
@@ -1703,7 +1702,7 @@ if "Segmentacion Clientes" in _visible:
 # ══════════════════════════════════════════════════════════════════════════════
 if "Recomendacion" in _visible:
     with tabs[_visible.index("Recomendacion")]:
-        st.subheader("Unidad IV — Recomendación de Servicios (FP-Growth)")
+        st.subheader("Recomendación de Servicios (FP-Growth)")
         st.caption("Market Basket Analysis: 'los clientes que piden A también piden B'")
 
         if not hay_citas:
@@ -1746,7 +1745,6 @@ if "Recomendacion" in _visible:
 st.divider()
 st.markdown(
     f"<p style='text-align:center;color:#555;font-size:11px;'>"
-    f"UrbanBlade Analytics · UTVT IDGS-93 · Extracción del conocimiento en bases de datos · "
-    f"MGTI. Héctor Velázquez Estrada · Equipo UrbanBlade | IDGS-93</p>",
+    f"UrbanBlade Analytics · Equipo UrbanBlade</p>",
     unsafe_allow_html=True
 )

@@ -51,6 +51,7 @@ Materia: Extracción del conocimiento en bases de datos — MGTI. Héctor Veláz
 """
 import sys
 import os
+import json
 from pathlib import Path
 from urllib.parse import quote_plus
 from datetime import datetime
@@ -163,6 +164,19 @@ def _edad(fecha_nac, ref_year=None):
     ref = ref_year or datetime.now().year
     edad = ref - dt.year
     return float(edad) if 0 < edad < 120 else None
+
+
+def _items_list(raw):
+    """Normaliza `orders.items`: el cast `'items' => 'array'` de Eloquent
+    (laravel-mongodb) lo persiste como STRING JSON, no como arreglo BSON
+    embebido — confirmado inspeccionando un documento real. Sin esto,
+    iterar cada item como dict revienta con 'str' object has no attribute 'get'."""
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (TypeError, ValueError):
+            return []
+    return raw if isinstance(raw, list) else []
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -641,7 +655,7 @@ def get_pedidos_df(spark):
     for p in pedidos:
         cli = clients_map.get(str(p.get("client_id", "")), {})
         uid = str(cli.get("user_id", ""))
-        items = p.get("items") or []
+        items = _items_list(p.get("items"))
         fdt = _to_dt(p.get("created_at"))
         records.append({
             "folio":        str(p.get("folio", "")),
@@ -672,7 +686,7 @@ def get_top_productos_df():
     db = client[database]
     rows = []
     for p in db["orders"].find({"estado": "entregado"}, {"_id": 0, "items": 1, "tipo": 1}):
-        for it in (p.get("items") or []):
+        for it in _items_list(p.get("items")):
             rows.append({
                 "producto":  str(it.get("nombre", "Desconocido")),
                 "cantidad":  _num(it.get("cantidad"), 0),
