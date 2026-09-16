@@ -36,6 +36,7 @@ from datetime import datetime
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col
+from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType
 from pyspark.ml.feature import VectorAssembler
 from pymongo import MongoClient
 from dotenv import load_dotenv
@@ -67,6 +68,35 @@ MESES             = {1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo"
 FEATURES_BASE     = ["duracion_min", "precio", "ingreso"]
 # Features honestas para clasificación de cancelación (sin fuga de datos)
 FEATURES_CANCEL   = ["duracion_min", "precio", "hora", "dia_semana", "mes"]
+
+# Schema explicito del DataFrame crudo (una fila por cita). Necesario para
+# spark.createDataFrame() cuando `records` viene vacio (barber_db sin citas
+# todavia) — Spark no puede inferir tipos de un dataset sin filas.
+RAW_SCHEMA = StructType([
+    StructField("servicio",       StringType(),  True),
+    StructField("barbero",        StringType(),  True),
+    StructField("duracion_min",   DoubleType(),  True),
+    StructField("precio",         DoubleType(),  True),
+    StructField("estado",         StringType(),  True),
+    StructField("ingreso",        DoubleType(),  True),
+    StructField("fecha",          StringType(),  True),
+    StructField("cliente",        StringType(),  True),
+    StructField("nivel",          StringType(),  True),
+    StructField("puntos_cliente", DoubleType(),  True),
+    StructField("edad_cliente",   DoubleType(),  True),
+    StructField("categoria",      StringType(),  True),
+    StructField("precio_base",    DoubleType(),  True),
+    StructField("anio",           IntegerType(), True),
+    StructField("mes",            IntegerType(), True),
+    StructField("dia",            IntegerType(), True),
+    StructField("dia_semana",     IntegerType(), True),
+    StructField("hora",           IntegerType(), True),
+    StructField("metodo_pago",    StringType(),  True),
+    StructField("es_cancelada",   IntegerType(), True),
+    StructField("es_no_asistio",  IntegerType(), True),
+    StructField("es_perdida",     IntegerType(), True),
+    StructField("client_id",      StringType(),  True),
+])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -274,11 +304,20 @@ def get_spark_session():
     client.close()
 
     pandas_df = pd.DataFrame(records)
-    print(f"Datos reales cargados desde MongoDB: {len(pandas_df)} citas "
-          f"| {pandas_df['cliente'].nunique()} clientes "
-          f"| {pandas_df['barbero'].nunique()} barberos")
-
-    df = spark.createDataFrame(pandas_df)
+    if pandas_df.empty:
+        # barber_db sin citas todavia (p.ej. tras un reseed) — sin esto, pandas
+        # crea un DataFrame sin columnas (pandas_df['cliente'] revienta con
+        # KeyError) y Spark tampoco puede inferir tipos de un dataset sin filas
+        # ("can not infer schema from empty dataset"). Se usa RAW_SCHEMA en su
+        # lugar solo en este caso — con filas reales la inferencia normal basta.
+        pandas_df = pd.DataFrame(columns=[f.name for f in RAW_SCHEMA.fields])
+        print("Datos reales cargados desde MongoDB: 0 citas (barber_db esta vacia)")
+        df = spark.createDataFrame(pandas_df, schema=RAW_SCHEMA)
+    else:
+        print(f"Datos reales cargados desde MongoDB: {len(pandas_df)} citas "
+              f"| {pandas_df['cliente'].nunique()} clientes "
+              f"| {pandas_df['barbero'].nunique()} barberos")
+        df = spark.createDataFrame(pandas_df)
 
     # Tipado explícito (columnas originales) + limpieza de nulos clave
     df = df.select(
