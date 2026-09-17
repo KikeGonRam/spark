@@ -74,6 +74,33 @@ st.markdown(f"""
   .stTabs [aria-selected="true"]      {{ color: {GOLD} !important; border-bottom: 2px solid {GOLD}; }}
   div[data-testid="stHorizontalBlock"] > div {{ border-radius: 12px; }}
   .block-container {{ padding-top: 1.5rem; }}
+
+  /* Identidad de sidebar — mismo lenguaje visual que los correos de barber
+     (resources/views/vendor/mail/html/themes/barberpro.css): tarjetas
+     oscuras con borde sutil, esquinas redondeadas, acentos dorados y
+     etiquetas en mayusculas con tracking. */
+  [data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"] {{
+      background-color: #1a1a1a;
+      border: 1px solid #2a2a2a !important;
+      border-radius: 14px !important;
+  }}
+  .ub-eyebrow {{
+      color: #8a8a8a; font-size: 10px; font-weight: 800;
+      text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 4px;
+  }}
+  .ub-role-badge {{
+      display: inline-block; background-color: rgba(212,175,55,0.15); color: {GOLD};
+      font-size: 10px; font-weight: 800; text-transform: uppercase;
+      letter-spacing: 0.08em; padding: 3px 10px; border-radius: 999px; margin-top: 4px;
+  }}
+  .ub-brand-title {{
+      color: {GOLD}; font-size: 22px; font-weight: 900; text-transform: uppercase;
+      letter-spacing: -0.02em; margin: 8px 0 0 0; line-height: 1.1;
+  }}
+  .ub-brand-tagline {{
+      color: #6b6b6b; font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.28em; margin: 2px 0 0 0;
+  }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -123,14 +150,6 @@ if st.session_state.auth_user is None:
                 st.rerun()
     st.stop()
 
-with st.sidebar:
-    _rol_txt = _NOMBRE_ROL.get(st.session_state.auth_user["rol"], st.session_state.auth_user["rol"])
-    st.success(f"**{st.session_state.auth_user['name']}** ({_rol_txt})", icon=":material/verified_user:")
-    if st.button("Cerrar sesión", use_container_width=True):
-        st.session_state.auth_user = None
-        st.rerun()
-    st.divider()
-
 # ─────────────────────────────────────────────────────────────────────────────
 # CARGA DE DATOS (UNA VEZ POR SESIÓN)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -141,6 +160,15 @@ def cargar_datos():
     spark, df, df_vector = get_spark_session()
     pdf = df.toPandas()
     return spark, df, df_vector, pdf
+
+# Se llama aqui (antes de definir el resto de las funciones de analisis, que
+# no importa en que orden se definan) para que el filtro de rango de fechas
+# del sidebar pueda usar el rango real de `pdf`.
+try:
+    _spark_full, _df_full, _df_vector_full, _pdf_full = cargar_datos()
+except Exception as e:
+    st.error(f"Error al conectar con MongoDB Atlas: {e}")
+    st.stop()
 
 @st.cache_resource(show_spinner="Entrenando modelos de regresión…")
 def entrenar_regresion(_spark, _df):
@@ -514,26 +542,66 @@ def analizar_comisiones_resenas(_df_pandas):
 # SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.image(_LOGO_PATH, width=64)
-    st.markdown(f"<h1 style='color:{GOLD};font-size:26px;margin-top:6px;margin-bottom:0'>UrbanBlade</h1>", unsafe_allow_html=True)
-    st.caption("Analítica de negocio en tiempo real")
-    st.divider()
-    col_bruno, col_txt = st.columns([1, 2])
-    with col_bruno:
-        st.image(_BRUNO_PATH, width=64)
-    with col_txt:
-        st.caption("**Bruno** — guardián del conocimiento. Lee los datos reales de "
-                   "`barber_db` y te avisa cuando algo no cuadra.")
-    st.divider()
-    st.markdown("**Filtros**")
-    vista_sel = st.radio(
-        "Sección",
-        ["Todo el panel", "Operación y Datos",
-         "Modelos Predictivos", "Segmentación y Patrones"],
-        help="Filtra qué pestañas se muestran — útil para exponer una sección a la vez",
-    )
-    k_clusters = st.slider("Clusters KMeans (K)", 2, 8, 3)
-    st.divider()
+    col_logo, col_brand = st.columns([1, 2.2])
+    with col_logo:
+        st.image(_LOGO_PATH, width=56)
+    with col_brand:
+        st.markdown(
+            "<p class='ub-brand-title'>UrbanBlade</p><p class='ub-brand-tagline'>Analytics</p>",
+            unsafe_allow_html=True,
+        )
+
+    _rol_txt = _NOMBRE_ROL.get(st.session_state.auth_user["rol"], st.session_state.auth_user["rol"])
+    with st.container(border=True):
+        st.markdown(
+            f"<p class='ub-eyebrow'>Sesión activa</p>"
+            f"<p style='color:#f2f2f2;font-weight:700;font-size:14px;margin:0;'>{st.session_state.auth_user['name']}</p>"
+            f"<span class='ub-role-badge'>{_rol_txt}</span>",
+            unsafe_allow_html=True,
+        )
+        if st.button("Cerrar sesión", use_container_width=True):
+            st.session_state.auth_user = None
+            st.rerun()
+
+    with st.container(border=True):
+        col_bruno, col_txt = st.columns([1, 2.4])
+        with col_bruno:
+            st.image(_BRUNO_PATH, width=56)
+        with col_txt:
+            st.markdown(
+                "<p class='ub-eyebrow'>Bruno</p>"
+                "<p style='color:#a3a3a3;font-size:12.5px;margin:0;line-height:1.4;'>Guardián del "
+                "conocimiento — lee los datos reales de <code>barber_db</code> y avisa cuando algo "
+                "no cuadra.</p>",
+                unsafe_allow_html=True,
+            )
+
+    with st.container(border=True):
+        st.markdown("<p class='ub-eyebrow'>Filtros</p>", unsafe_allow_html=True)
+        vista_sel = st.radio(
+            "Sección",
+            ["Todo el panel", "Operación y Datos",
+             "Modelos Predictivos", "Segmentación y Patrones"],
+            help="Filtra qué pestañas se muestran — útil para exponer una sección a la vez",
+        )
+        k_clusters = st.slider("Clusters KMeans (K)", 2, 8, 3)
+
+        if len(_pdf_full):
+            _fechas_validas = pd.to_datetime(_pdf_full["fecha"].str[:10], errors="coerce").dropna()
+        else:
+            _fechas_validas = pd.Series([], dtype="datetime64[ns]")
+        if len(_fechas_validas):
+            _fecha_min, _fecha_max = _fechas_validas.min().date(), _fechas_validas.max().date()
+            rango_fechas = st.date_input(
+                "Rango de fechas (citas)",
+                value=(_fecha_min, _fecha_max),
+                min_value=_fecha_min, max_value=_fecha_max,
+                help="Filtra el resumen ejecutivo y los modelos predictivos/de segmentación por fecha "
+                     "de la cita. Pagos, membresías, gift cards y demás siguen mostrando todo el histórico.",
+            )
+        else:
+            rango_fechas = None
+
     # cache_resource nunca expira solo: si la BD cambió (nuevas citas, reseed),
     # el dashboard seguiría mostrando datos viejos hasta reiniciar el proceso.
     if st.button("Actualizar datos", use_container_width=True,
@@ -543,13 +611,31 @@ with st.sidebar:
     st.caption("MongoDB Atlas → barber_db")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CARGAR DATOS
+# APLICAR FILTRO DE FECHAS (citas) — el resto de colecciones (pagos,
+# membresías, gift cards, etc.) no dependen de esta variable y siguen
+# mostrando todo el histórico, ver ayuda del filtro en el sidebar.
 # ─────────────────────────────────────────────────────────────────────────────
-try:
-    spark, df, df_vector, pdf = cargar_datos()
-except Exception as e:
-    st.error(f"Error al conectar con MongoDB Atlas: {e}")
-    st.stop()
+spark = _spark_full
+if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
+    _desde, _hasta = rango_fechas
+    _fecha_dt = pd.to_datetime(_pdf_full["fecha"].str[:10], errors="coerce")
+    _mascara = (_fecha_dt.dt.date >= _desde) & (_fecha_dt.dt.date <= _hasta)
+    pdf = _pdf_full[_mascara].reset_index(drop=True)
+    if len(pdf) < len(_pdf_full):
+        from pyspark.sql.functions import col as _col, to_date as _to_date
+        df = _df_full.filter(
+            (_to_date(_col("fecha").substr(1, 10), "yyyy-MM-dd") >= str(_desde))
+            & (_to_date(_col("fecha").substr(1, 10), "yyyy-MM-dd") <= str(_hasta))
+        )
+        from pyspark.ml.feature import VectorAssembler as _VectorAssembler
+        from config.mongo_spark_conexion_sinnulos import FEATURES_BASE as _FEATURES_BASE
+        df_vector = _VectorAssembler(
+            inputCols=_FEATURES_BASE, outputCol="features", handleInvalid="skip"
+        ).transform(df)
+    else:
+        df, df_vector = _df_full, _df_vector_full
+else:
+    df, df_vector, pdf = _df_full, _df_vector_full, _pdf_full
 
 # barber_db puede estar vacia (p.ej. tras un reseed) — los modelos de Spark ML
 # (Unidad III/IV) truenan con "Training dataset is empty" en vez de mostrar un
@@ -565,6 +651,109 @@ if not hay_citas:
                    "modelos predictivos y de segmentación requieren al menos algunas citas reales "
                    "para entrenar — aparecerán automáticamente en cuanto existan datos.",
                    icon=":material/warning:")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REPORTE EJECUTIVO (PDF con identidad UrbanBlade) — Resumen Ejecutivo
+# ─────────────────────────────────────────────────────────────────────────────
+def generar_reporte_pdf(pdf_data: pd.DataFrame, canceladas: int, ingreso_real: float) -> bytes:
+    """Genera un PDF de una pagina con el mismo lenguaje visual que los
+    correos de barber (fondo oscuro, acentos dorados, tarjetas redondeadas) —
+    pensado para llevarse a una junta sin tener que compartir pantalla."""
+    from fpdf import FPDF
+
+    GOLD_RGB = (212, 175, 55)
+    DARK_RGB = (14, 14, 14)
+    CARD_RGB = (26, 26, 26)
+    GRAY_RGB = (163, 163, 163)
+
+    pdf_doc = FPDF(orientation="P", unit="mm", format="A4")
+    pdf_doc.set_auto_page_break(False)  # reporte de una sola pagina a proposito
+    pdf_doc.add_page()
+    pdf_doc.set_fill_color(*DARK_RGB)
+    pdf_doc.rect(0, 0, 210, 297, style="F")
+
+    if os.path.exists(_LOGO_PATH):
+        pdf_doc.image(_LOGO_PATH, x=15, y=12, w=16)
+    pdf_doc.set_xy(35, 14)
+    pdf_doc.set_text_color(*GOLD_RGB)
+    pdf_doc.set_font("Helvetica", "B", 18)
+    pdf_doc.cell(0, 8, "UrbanBlade Analytics", new_x="LMARGIN", new_y="NEXT")
+    pdf_doc.set_x(35)
+    pdf_doc.set_text_color(*GRAY_RGB)
+    pdf_doc.set_font("Helvetica", "", 10)
+    rango_txt = "Todo el histórico disponible"
+    if len(pdf_data) and "fecha" in pdf_data:
+        _f = pd.to_datetime(pdf_data["fecha"].str[:10], errors="coerce").dropna()
+        if len(_f):
+            rango_txt = f"{_f.min().date()} - {_f.max().date()}"
+    pdf_doc.cell(0, 6, f"Reporte Ejecutivo - {rango_txt}", new_x="LMARGIN", new_y="NEXT")
+
+    pdf_doc.set_y(38)
+    pdf_doc.set_draw_color(42, 42, 42)
+    pdf_doc.line(15, pdf_doc.get_y(), 195, pdf_doc.get_y())
+
+    # ── KPIs ──────────────────────────────────────────────────────────────
+    n = len(pdf_data)
+    kpis = [
+        ("Total citas", f"{n:,}"),
+        ("Clientes únicos", f"{pdf_data['cliente'].nunique():,}" if n else "0"),
+        ("Ingreso real", f"${ingreso_real:,.0f} MXN"),
+        ("Ticket promedio", f"${pdf_data['ingreso'].mean():,.0f}" if n else "$0"),
+        ("Tasa cancelación", f"{canceladas / n * 100:.1f}%" if n else "0.0%"),
+        ("Barberos activos", f"{pdf_data['barbero'].nunique():,}" if n else "0"),
+    ]
+    pdf_doc.set_y(46)
+    col_w = 60
+    for i, (label, value) in enumerate(kpis):
+        x = 15 + (i % 3) * col_w
+        y = 46 + (i // 3) * 26
+        pdf_doc.set_xy(x, y)
+        pdf_doc.set_fill_color(*CARD_RGB)
+        pdf_doc.rect(x, y, col_w - 4, 22, style="F")
+        pdf_doc.set_xy(x + 4, y + 4)
+        pdf_doc.set_text_color(*GRAY_RGB)
+        pdf_doc.set_font("Helvetica", "", 8)
+        pdf_doc.cell(col_w - 10, 4, label.upper())
+        pdf_doc.set_xy(x + 4, y + 10)
+        pdf_doc.set_text_color(255, 255, 255)
+        pdf_doc.set_font("Helvetica", "B", 13)
+        pdf_doc.cell(col_w - 10, 8, value)
+
+    # ── Tablas: top barberos + ingreso por servicio ─────────────────────────
+    def _tabla(titulo, filas, y_inicio):
+        pdf_doc.set_xy(15, y_inicio)
+        pdf_doc.set_text_color(*GOLD_RGB)
+        pdf_doc.set_font("Helvetica", "B", 11)
+        pdf_doc.cell(0, 7, titulo, new_x="LMARGIN", new_y="NEXT")
+        pdf_doc.set_x(15)
+        for nombre, valor in filas:
+            pdf_doc.set_text_color(*GRAY_RGB)
+            pdf_doc.set_font("Helvetica", "", 9)
+            pdf_doc.cell(120, 6, str(nombre)[:45])
+            pdf_doc.set_text_color(255, 255, 255)
+            pdf_doc.set_font("Helvetica", "B", 9)
+            pdf_doc.cell(0, 6, str(valor), align="R", new_x="LMARGIN", new_y="NEXT")
+            pdf_doc.set_x(15)
+
+    if n:
+        top_barberos = (pdf_data.groupby("barbero").size().sort_values(ascending=False)
+                        .head(8).reset_index(name="citas"))
+        _tabla("Top barberos por número de citas",
+               [(r.barbero, f"{r.citas} citas") for r in top_barberos.itertuples()], 104)
+
+        por_svc = (pdf_data.groupby("servicio")["ingreso"].sum().sort_values(ascending=False)
+                   .head(8).reset_index())
+        _tabla("Ingreso por servicio",
+               [(r.servicio, f"${r.ingreso:,.0f}") for r in por_svc.itertuples()], 104 + 12 + len(top_barberos) * 6 + 10)
+
+    pdf_doc.set_y(280)
+    pdf_doc.set_text_color(90, 90, 90)
+    pdf_doc.set_font("Helvetica", "", 8)
+    pdf_doc.cell(0, 5, f"UrbanBlade Analytics - Equipo UrbanBlade - Generado {pd.Timestamp.now():%Y-%m-%d %H:%M}",
+                 align="C")
+
+    return bytes(pdf_doc.output())
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HEADER + KPIs GLOBALES
@@ -671,6 +860,26 @@ if "Resumen Ejecutivo" in _visible:
                                annotation_text=f"Media: ${pdf['precio'].mean():.0f}", annotation_font_color="white")
             fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
             st.plotly_chart(fig4, use_container_width=True)
+
+        st.divider()
+        st.markdown("#### Exportar")
+        col_exp1, col_exp2 = st.columns(2)
+        with col_exp1:
+            st.download_button(
+                "📄 Descargar reporte ejecutivo (PDF)",
+                data=generar_reporte_pdf(pdf, canceladas, ingreso_real),
+                file_name=f"urbanblade-reporte-{pd.Timestamp.now():%Y%m%d}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+        with col_exp2:
+            st.download_button(
+                "⬇️ Descargar datos filtrados (CSV)",
+                data=pdf.to_csv(index=False).encode("utf-8"),
+                file_name=f"urbanblade-citas-{pd.Timestamp.now():%Y%m%d}.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 2 — MAPREDUCE
