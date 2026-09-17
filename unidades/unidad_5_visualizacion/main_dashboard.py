@@ -29,6 +29,7 @@ from config.mongo_spark_conexion_sinnulos import (
     get_referidos_df, get_rifas_df, get_waitlist_df,
     get_comisiones_df, get_resenas_df,
     autenticar_usuario, google_login_url, verificar_google_token,
+    get_cohortes_df, get_clv_df,
 )
 
 # Nombre de presentación por rol real de `barber` — solo para lo que se
@@ -538,6 +539,10 @@ def analizar_waitlist():
 def analizar_comisiones_resenas(_df_pandas):
     return get_comisiones_df(_df_pandas), get_resenas_df()
 
+@st.cache_resource(show_spinner="Calculando cohortes de retención y CLV…")
+def analizar_cohortes_clv(_spark, _df, _pdf):
+    return get_cohortes_df(_pdf), get_clv_df(_spark, _df)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
@@ -796,10 +801,10 @@ st.divider()
 # muestran (15 pestañas a la vez desbordan la barra en una exposición).
 # 'Resumen Ejecutivo' se incluye en todos los grupos como ancla.
 _TAB_GROUPS = {
-    "Todo el panel": ['Resumen Ejecutivo', 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario', 'Tienda y Pedidos', 'Publicaciones', 'Gift Cards y Paquetes', 'Membresias', 'Referidos y Rifas', 'Lista de Espera', 'Comisiones y Reseñas', 'Regresion', 'Arbol de Decision', 'Random Forest', 'Churn / Abandono', 'Demanda', 'KMeans', 'PCA', 'Segmentacion Clientes', 'Recomendacion'],
-    "Operación y Datos": ['Resumen Ejecutivo', 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario', 'Tienda y Pedidos', 'Publicaciones', 'Gift Cards y Paquetes', 'Membresias', 'Referidos y Rifas', 'Lista de Espera', 'Comisiones y Reseñas'],
+    "Todo el panel": ['Resumen Ejecutivo', 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario', 'Tienda y Pedidos', 'Publicaciones', 'Gift Cards y Paquetes', 'Membresias', 'Referidos y Rifas', 'Lista de Espera', 'Comisiones y Reseñas', 'Retención y CLV', 'Regresion', 'Arbol de Decision', 'Random Forest', 'Churn / Abandono', 'Demanda', 'KMeans', 'PCA', 'Segmentacion Clientes', 'Recomendacion'],
+    "Operación y Datos": ['Resumen Ejecutivo', 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario', 'Tienda y Pedidos', 'Publicaciones', 'Gift Cards y Paquetes', 'Membresias', 'Referidos y Rifas', 'Lista de Espera', 'Comisiones y Reseñas', 'Retención y CLV'],
     "Modelos Predictivos": ['Resumen Ejecutivo', 'Regresion', 'Arbol de Decision', 'Random Forest', 'Churn / Abandono', 'Demanda'],
-    "Segmentación y Patrones": ['Resumen Ejecutivo', 'KMeans', 'PCA', 'Segmentacion Clientes', 'Recomendacion'],
+    "Segmentación y Patrones": ['Resumen Ejecutivo', 'KMeans', 'PCA', 'Segmentacion Clientes', 'Recomendacion', 'Retención y CLV'],
 }
 _visible = _TAB_GROUPS[vista_sel]
 tabs = st.tabs(_visible)
@@ -1456,6 +1461,88 @@ if "Comisiones y Reseñas" in _visible:
             fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                                font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
             st.plotly_chart(fig2, use_container_width=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — RETENCIÓN Y CLV (spark-advanced-analytics-plan, Fase 1)
+# ══════════════════════════════════════════════════════════════════════════════
+if "Retención y CLV" in _visible:
+    with tabs[_visible.index("Retención y CLV")]:
+        st.subheader("Retención de Clientes (Cohortes) y CLV Proyectado")
+        st.caption("Patrón de Mixpanel/Amplitude/Shopify: ¿los clientes que llegan se quedan? "
+                   "¿cuánto van a gastar en total?")
+
+        if not hay_citas:
+            st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
+                    "en cuanto existan datos reales.", icon=":material/info:")
+        else:
+            cohortes_pdf, clv_pdf = analizar_cohortes_clv(spark, df, pdf)
+
+            st.markdown("#### Retención por cohorte de llegada")
+            if cohortes_pdf is None or cohortes_pdf.empty:
+                st.info("No hay suficientes meses de historia todavía para calcular cohortes.",
+                        icon=":material/info:")
+            else:
+                tabla_cohorte = cohortes_pdf.pivot(index="cohorte", columns="mes_desde_cohorte",
+                                                    values="retencion_pct")
+                tabla_cohorte.columns = [f"Mes {c}" for c in tabla_cohorte.columns]
+                fig_coh = px.imshow(tabla_cohorte, text_auto=".0f", aspect="auto",
+                                     color_continuous_scale=[[0, "#2a0a0a"], [0.5, "#4a3a10"], [1, GOLD]],
+                                     labels=dict(x="Meses desde la primera cita", y="Cohorte (mes de llegada)",
+                                                 color="Retención %"))
+                # Sin esto, plotly detecta las etiquetas "2026-06" como fechas
+                # y las reformatea de forma ilegible (eje Y es categorico, no temporal).
+                fig_coh.update_yaxes(type="category")
+                fig_coh.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white",
+                                       title="% de la cohorte que volvió a agendar cada mes siguiente")
+                st.plotly_chart(fig_coh, use_container_width=True)
+                st.caption("Fila = mes en que un grupo de clientes llegó por primera vez. Columna = "
+                           "meses después. 100% en 'Mes 0' es normal (es la cita que los define como "
+                           "cohorte) — lo que importa es qué tan rápido cae hacia la derecha.")
+
+            st.divider()
+            st.markdown("#### CLV proyectado a 12 meses")
+            if clv_pdf is None or clv_pdf.empty:
+                st.info("Sin clientes suficientes para proyectar CLV todavía.", icon=":material/info:")
+            else:
+                col_k1, col_k2, col_k3 = st.columns(3)
+                col_k1.metric("CLV promedio (12m)", f"${clv_pdf['clv_proyectado_12m'].mean():,.0f}")
+                col_k2.metric("CLV total de la cartera", f"${clv_pdf['clv_proyectado_12m'].sum():,.0f}")
+                top_cliente = clv_pdf.loc[clv_pdf["clv_proyectado_12m"].idxmax()]
+                col_k3.metric("Cliente de mayor valor", top_cliente["cliente"],
+                              delta=f"${top_cliente['clv_proyectado_12m']:,.0f} proyectado")
+
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    top10 = clv_pdf.sort_values("clv_proyectado_12m", ascending=False).head(10)
+                    fig_clv = px.bar(top10, x="clv_proyectado_12m", y="cliente", orientation="h",
+                                      title="Top 10 clientes por CLV proyectado",
+                                      color="clv_proyectado_12m", color_continuous_scale=[[0, "#333"], [1, GOLD]],
+                                      labels={"clv_proyectado_12m": "CLV proyectado 12m ($MXN)", "cliente": ""})
+                    fig_clv.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                           font_color="white", coloraxis_showscale=False,
+                                           yaxis=dict(autorange="reversed"))
+                    st.plotly_chart(fig_clv, use_container_width=True)
+                with col_b:
+                    fig_dist = px.histogram(clv_pdf, x="clv_proyectado_12m", nbins=15,
+                                             title="Distribución del CLV proyectado",
+                                             color_discrete_sequence=[GOLD],
+                                             labels={"clv_proyectado_12m": "CLV proyectado 12m ($MXN)"})
+                    fig_dist.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                            font_color="white")
+                    st.plotly_chart(fig_dist, use_container_width=True)
+
+                st.caption("Fórmula: gasto promedio por cita × frecuencia mensual × 12 meses — misma "
+                           "lógica que el CLV básico de Shopify. Es una proyección, no una garantía: "
+                           "mejora conforme haya más historial real por cliente.")
+                st.dataframe(
+                    clv_pdf[["cliente", "nivel", "total_citas", "gasto_promedio",
+                             "frecuencia_mensual", "clv_proyectado_12m"]]
+                    .sort_values("clv_proyectado_12m", ascending=False)
+                    .rename(columns={"cliente": "Cliente", "nivel": "Nivel", "total_citas": "Citas",
+                                      "gasto_promedio": "Gasto Prom.", "frecuencia_mensual": "Citas/Mes",
+                                      "clv_proyectado_12m": "CLV 12m"}),
+                    use_container_width=True, hide_index=True,
+                )
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 7 — REGRESIÓN
