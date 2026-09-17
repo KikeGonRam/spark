@@ -85,6 +85,7 @@ from config.mongo_spark_conexion_sinnulos import (
     DIAS_SEMANA, MESES,
     FEATURES_CANCEL, PAGO_ESTADO_VERIFICADO,
 )
+from config.analytics_publication import publish_insights_atomically
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CATEGORÍA de cada insight — agrupa los hallazgos en la app por ETAPA del
@@ -1020,21 +1021,8 @@ for d in insights:
 # después la renombra con dropTarget: el cambio visible para Laravel es atómico.
 # ═══════════════════════════════════════════════════════════════════════════
 client, database = _connect_analytics_db()
-db = client[database]
-target_collection = "analytics_insights"
-temporary_collection = f"{target_collection}__{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
-
 try:
-    db.create_collection(temporary_collection)
-    if insights:
-        db[temporary_collection].insert_many(insights, ordered=True)
-    db[temporary_collection].create_index([("roles", 1), ("generado_en", -1)])
-    db[temporary_collection].create_index("barbero_user_id")
-    db[temporary_collection].create_index("barbero_perfil_id")
-    db[temporary_collection].rename(target_collection, dropTarget=True)
-except Exception:
-    db.drop_collection(temporary_collection)
-    raise
+    publish_insights_atomically(client[database], insights)
 finally:
     client.close()
 
