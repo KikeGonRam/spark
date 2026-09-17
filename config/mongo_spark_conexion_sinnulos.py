@@ -312,6 +312,52 @@ def _connect_db():
     return MongoClient(uri), database
 
 
+# Roles reales de `barber` (RolePermissionSeeder) autorizados a ver este
+# dashboard de negocio. 'ingeniero' es el nombre real del rol en la base de
+# datos (compartido con barber/frontend-urban) — aqui se presenta como
+# "Analista" solo dentro de spark, sin renombrar el rol real todavia (eso
+# implica tocar ~14 archivos entre barber y frontend-urban, incluido uno con
+# cambios sin commitear de otra persona ahora mismo).
+ROLES_AUTORIZADOS = ["administrador", "ingeniero"]
+
+
+def autenticar_usuario(email: str, password: str):
+    """Verifica credenciales contra la coleccion `users` real de barber
+    (mismo hash bcrypt que usa Laravel Hash::make(), compatible con la
+    libreria bcrypt de Python) y que el usuario tenga un rol autorizado
+    (ROLES_AUTORIZADOS). Devuelve {"name", "email", "rol"} o None."""
+    import bcrypt
+
+    client, database = _connect_db()
+    db = client[database]
+    user = db["users"].find_one({"email": str(email).strip().lower()})
+    if not user or not user.get("password"):
+        client.close()
+        return None
+
+    stored_hash = user["password"].encode("utf-8")
+    try:
+        password_ok = bcrypt.checkpw(password.encode("utf-8"), stored_hash)
+    except ValueError:
+        client.close()
+        return None
+    if not password_ok:
+        client.close()
+        return None
+
+    role_ids = {str(r) for r in (user.get("role_id") or [])}
+    nombre_por_id = {
+        str(r["_id"]): r.get("name")
+        for r in db["roles"].find({"name": {"$in": ROLES_AUTORIZADOS}})
+    }
+    client.close()
+
+    rol_encontrado = next((nombre_por_id[rid] for rid in role_ids if rid in nombre_por_id), None)
+    if rol_encontrado is None:
+        return None
+    return {"name": user.get("name", "Usuario"), "email": user.get("email", ""), "rol": rol_encontrado}
+
+
 def _build_spark():
     os.environ["PYSPARK_PYTHON"]        = sys.executable
     os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
