@@ -661,6 +661,53 @@ def get_forecast_df(pdf: pd.DataFrame, semanas_adelante: int = 4, minimo_semanas
     return resultado
 
 
+def get_anomalias_df(pdf: pd.DataFrame, ventana: int = 4, umbral_std: float = 1.5, minimo_semanas: int = 6) -> pd.DataFrame:
+    """Detecta semanas donde citas/ingreso se desvian mas de `umbral_std`
+    desviaciones estandar del promedio movil de las `ventana` semanas
+    anteriores (metodo simple, honesto para el poco historial disponible --
+    no un modelo estadistico complejo de deteccion de anomalias). Devuelve
+    un DataFrame con una fila por semana marcada como anomalia, o vacio si
+    no hay suficiente historial o no se detecto ninguna."""
+    if pdf is None or pdf.empty or "fecha" not in pdf:
+        return pd.DataFrame()
+    d = pdf.copy()
+    d["fecha_dt"] = pd.to_datetime(d["fecha"].str[:10], errors="coerce")
+    d = d.dropna(subset=["fecha_dt"])
+    if d.empty:
+        return pd.DataFrame()
+    d["ingreso_real"] = d["ingreso"].where(d["estado"] != "cancelada", 0.0)
+    semanal = (d.set_index("fecha_dt")
+               .resample("W")
+               .agg(citas=("estado", "size"), ingreso=("ingreso_real", "sum"))
+               .reset_index())
+    if len(semanal) < minimo_semanas:
+        return pd.DataFrame()
+
+    filas = []
+    for columna in ["citas", "ingreso"]:
+        serie = semanal[columna]
+        for i in range(ventana, len(semanal)):
+            base = serie.iloc[i - ventana:i]
+            promedio = base.mean()
+            desviacion = base.std(ddof=1) if len(base) > 1 else 0.0
+            actual = serie.iloc[i]
+            if desviacion == 0:
+                continue
+            z = (actual - promedio) / desviacion
+            if abs(z) >= umbral_std:
+                pct = (actual - promedio) / promedio * 100 if promedio else 0.0
+                filas.append({
+                    "fecha": semanal["fecha_dt"].iloc[i],
+                    "metrica": "Citas" if columna == "citas" else "Ingreso",
+                    "valor_real": actual,
+                    "valor_esperado": round(promedio, 1),
+                    "desviacion_pct": round(pct, 1),
+                    "z_score": round(z, 2),
+                    "tipo": "arriba" if z > 0 else "abajo",
+                })
+    return pd.DataFrame(filas).sort_values("fecha", ascending=False) if filas else pd.DataFrame()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper: DataFrame de PAGOS (colección `payments`) — control de calidad
 # ─────────────────────────────────────────────────────────────────────────────
