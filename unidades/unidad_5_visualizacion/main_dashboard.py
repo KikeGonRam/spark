@@ -615,6 +615,23 @@ with st.sidebar:
         else:
             rango_fechas = None
 
+        with st.expander("Anotaciones (eventos conocidos)"):
+            st.caption("Marca picos/caídas conocidos en la gráfica de proyección de "
+                       "Demanda (ej. promoción, feriado). Solo dura la sesión.")
+            _anot_fecha = st.date_input("Fecha del evento", value=None, key="anot_fecha")
+            _anot_texto = st.text_input("Nota corta", key="anot_texto", max_chars=40)
+            if st.button("Agregar anotación", use_container_width=True):
+                if _anot_fecha and _anot_texto:
+                    st.session_state.setdefault("anotaciones", []).append(
+                        {"fecha": _anot_fecha, "texto": _anot_texto})
+                    st.rerun()
+            for _i, _a in enumerate(st.session_state.get("anotaciones", [])):
+                _c_a, _c_b = st.columns([4, 1])
+                _c_a.caption(f"{_a['fecha']} — {_a['texto']}")
+                if _c_b.button("✕", key=f"del_anot_{_i}"):
+                    st.session_state["anotaciones"].pop(_i)
+                    st.rerun()
+
     # cache_resource nunca expira solo: si la BD cambió (nuevas citas, reseed),
     # el dashboard seguiría mostrando datos viejos hasta reiniciar el proceso.
     if st.button("Actualizar datos", use_container_width=True,
@@ -818,7 +835,6 @@ def _sparkline(serie: pd.Series, color: str):
     return fig
 
 
-c1, c2, c3, c4, c5, c6 = st.columns(6)
 canceladas   = pdf["es_cancelada"].sum() if "es_cancelada" in pdf else (pdf["estado"] == "cancelada").sum()
 ingreso_real = pdf.loc[pdf["estado"] != "cancelada", "ingreso"].sum()
 
@@ -846,9 +862,35 @@ if {"anio", "mes"}.issubset(pdf.columns) and (pdf["anio"] > 0).any():
 _sem = _serie_semanal(pdf)
 _spark_kwargs = dict(use_container_width=True, config={"displayModeBar": False})
 
+# ─────────────────────────────────────────────────────────────────────────────
+# "Número norte": Ingreso Real es la métrica que más le importa al dueño del
+# negocio (todo lo demás — citas, clientes, ticket, cancelación — explica el
+# ingreso, no al revés), así que se destaca visualmente en vez de competir en
+# igualdad de tamaño con las otras 5 — patrón que usan Stripe/GA4 en sus
+# resúmenes ("primary metric" grande arriba, el resto como contexto secundario).
+st.markdown(f"""
+<div style="border:1px solid rgba(212,175,55,0.35); border-radius:12px;
+            padding:18px 24px; margin-bottom:14px;
+            background:linear-gradient(135deg, rgba(212,175,55,0.10), rgba(212,175,55,0.02));">
+  <div style="font-size:0.85rem; letter-spacing:0.05em; text-transform:uppercase;
+              color:{GOLD}; opacity:0.9; margin-bottom:4px;">Métrica Norte</div>
+  <div style="font-size:2.6rem; font-weight:700; color:white; line-height:1.1;">
+    ${ingreso_real:,.0f}
+  </div>
+  <div style="color:#bbb; font-size:0.95rem; margin-top:2px;">
+    Ingreso Real{f" · {_delta['ingreso']}" if _delta["ingreso"] else ""}
+  </div>
+</div>
+""", unsafe_allow_html=True)
+_fig_norte = _sparkline(_sem["ingreso"], GOLD)
+if _fig_norte is not None:
+    _fig_norte.update_layout(height=70)
+    st.plotly_chart(_fig_norte, **_spark_kwargs)
+
+c1, c2, c3, c4, c5 = st.columns(5)
 with c1:
     st.metric("Total Citas", f"{len(pdf):,}", delta=_delta["citas"])
-    _fig = _sparkline(_sem["citas"], GOLD)
+    _fig = _sparkline(_sem["citas"], BLUE)
     if _fig is not None:
         st.plotly_chart(_fig, **_spark_kwargs)
 with c2:
@@ -857,22 +899,17 @@ with c2:
     if _fig is not None:
         st.plotly_chart(_fig, **_spark_kwargs)
 with c3:
-    st.metric("Ingreso Real", f"${ingreso_real:,.0f}", delta=_delta["ingreso"], help="Excluye citas canceladas")
-    _fig = _sparkline(_sem["ingreso"], GREEN)
-    if _fig is not None:
-        st.plotly_chart(_fig, **_spark_kwargs)
-with c4:
     st.metric("Ticket Promedio", f"${pdf['ingreso'].mean():,.0f}" if hay_citas else "$0", delta=_delta["ticket"])
     _fig = _sparkline(_sem["ticket_promedio"], PURPLE)
     if _fig is not None:
         st.plotly_chart(_fig, **_spark_kwargs)
-with c5:
+with c4:
     st.metric("Tasa Cancelación", f"{canceladas/len(pdf)*100:.1f}%" if hay_citas else "0.0%",
               delta=_delta["cancel"], delta_color="inverse", help="Baja es bueno")
     _fig = _sparkline(_sem["cancel_pct"], RED)
     if _fig is not None:
         st.plotly_chart(_fig, **_spark_kwargs)
-with c6:
+with c5:
     st.metric("Barberos", pdf["barbero"].nunique())
     _fig = _sparkline(_sem["barberos"], "#999999")
     if _fig is not None:
@@ -925,15 +962,18 @@ if "Resumen Ejecutivo" in _visible:
         col_a, col_b = st.columns(2)
 
         with col_a:
-            # Distribución de estados
+            # Distribución de estados — barras horizontales en vez de donut:
+            # con 6 estados posibles (ESTADOS_VALIDOS) un donut se vuelve dificil
+            # de comparar a simple vista; una barra ordenada sí lo permite.
             estados = pdf["estado"].value_counts().reset_index()
             estados.columns = ["estado", "count"]
-            fig = px.pie(estados, values="count", names="estado",
+            estados = estados.sort_values("count", ascending=True)
+            fig = px.bar(estados, x="count", y="estado", orientation="h",
                          title="Distribución de Estados de Citas",
-                         color_discrete_sequence=px.colors.qualitative.Set3,
-                         hole=0.4)
+                         color="count", color_continuous_scale=[[0, "#444"], [1, GOLD]])
             fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                              font_color="white", legend_font_color="white")
+                              font_color="white", legend_font_color="white",
+                              coloraxis_showscale=False, yaxis_title="", xaxis_title="Citas")
             st.plotly_chart(fig, use_container_width=True)
 
         with col_b:
@@ -1850,10 +1890,15 @@ if "Random Forest" in _visible:
             col_c, col_d = st.columns(2)
 
             with col_c:
-                fig3 = px.pie(dist_estados, values="count", names="estado",
+                # Barras horizontales en vez de donut: mismo motivo que en Resumen
+                # Ejecutivo — 6 estados posibles son dificiles de comparar en un pie.
+                dist_estados_bar = dist_estados.sort_values("count", ascending=True)
+                fig3 = px.bar(dist_estados_bar, x="count", y="estado", orientation="h",
                               title="Distribución Real de Estados en Datos de Entrenamiento",
-                              hole=0.35, color_discrete_sequence=px.colors.qualitative.Set2)
-                fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                              color="count", color_continuous_scale=[[0, "#444"], [1, GOLD]])
+                fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                    font_color="white", coloraxis_showscale=False,
+                                    yaxis_title="", xaxis_title="Cantidad")
                 st.plotly_chart(fig3, use_container_width=True)
 
             with col_d:
@@ -2011,6 +2056,16 @@ if "Demanda" in _visible:
                             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                             font_color="white", legend=dict(orientation="h", y=-0.2),
                         )
+                        # Anotaciones manuales (eventos conocidos) — ver expander
+                        # "Anotaciones" en el sidebar. Manual a propósito: automatizar
+                        # la detección de "por qué" pasó un pico requeriría datos que
+                        # hoy no se capturan (promociones, feriados, etc.).
+                        for _a in st.session_state.get("anotaciones", []):
+                            fig_f.add_vline(x=pd.Timestamp(_a["fecha"]), line_dash="dot",
+                                            line_color="#e0c674")
+                            fig_f.add_annotation(x=pd.Timestamp(_a["fecha"]), y=1, yref="paper",
+                                                  text=_a["texto"], showarrow=False,
+                                                  yshift=10, font=dict(size=10, color="#e0c674"))
                         st.plotly_chart(fig_f, use_container_width=True)
                         tendencia = datos["tendencia_semanal"]
                         direccion = "subiendo" if tendencia > 0 else "bajando" if tendencia < 0 else "estable"
