@@ -1,0 +1,15 @@
+# Dependencias minimas para correr SOLO el dashboard (unidades/unidad_5_visualizacion/
+# main_dashboard.py) en Docker. El requirements.txt completo (torch, tensorflow,
+# xgboost, etc.) es para los scripts de las demas unidades del curso y no hace
+# falta para el dashboard -- usar ese archivo aqui inflaria la imagen varios GB
+# sin necesidad.
+pyspark==3.5.1
+pymongo==4.7.2
+python-dotenv==1.2.2
+pandas==2.2.2
+numpy==1.26.4
+plotly==5.22.0
+streamlit==1.35.0
+bcrypt==5.0.0
+fpdf2==2.8.8
+requests==2.31.0

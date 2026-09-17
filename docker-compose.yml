@@ -1,0 +1,50 @@
+# Despliegue local, siempre encendido, del dashboard de negocio
+# (unidades/unidad_5_visualizacion/main_dashboard.py). Se une a la red de
+# `barber` para que el login con Google pueda llamar a su API por el nombre
+# del servicio en vez de "localhost" (que dentro de un contenedor apuntaria
+# a si mismo, no al host). Requiere que `barber` ya este corriendo
+# (docker compose up -d en esa carpeta) antes de levantar esto.
+#
+# Uso:
+#   docker compose up -d --build
+#   abrir http://localhost:8501
+#
+# Los datos de negocio NUNCA salen de esta maquina/red local -- no hay
+# puertos expuestos mas alla de 8501, y ese puerto solo es alcanzable desde
+# el host y la red local del mismo, no desde internet.
+services:
+  dashboard:
+    build: .
+    image: urbanblade-spark-dashboard:latest
+    container_name: spark-dashboard
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Dentro de la red de Docker, "localhost" apuntaria al propio
+      # contenedor de spark, no al de barber -- se usa el nombre del
+      # servicio nginx de barber ("web") en su lugar. Ver docker-compose.yml
+      # de barber para el nombre real del servicio. Usada SOLO por Python
+      # (verificar_google_token) para llamar a la API server-to-server.
+      BARBER_API_URL: http://web
+      # Usada por google_login_url() -- este link lo abre el NAVEGADOR del
+      # usuario, que no esta dentro de la red de Docker y no puede resolver
+      # "http://web". Ajustar si barber se sirve en otro host/puerto.
+      BARBER_PUBLIC_URL: http://localhost:8000
+    ports:
+      - "8501:8501"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - barber_internal
+
+networks:
+  # Red externa creada por `barber` (docker-compose.yml de ese repo) -- no la
+  # crea este archivo, solo se conecta a ella. Si `barber` no esta corriendo
+  # todavia, "docker compose up" aqui falla con un mensaje claro pidiendo
+  # crearla primero.
+  barber_internal:
+    external: true
