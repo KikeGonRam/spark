@@ -127,14 +127,37 @@ hacia arriba (picos, no caidas) — 13/09 ingreso +67%, 02/08 citas +148% e ingr
 contra MongoDB Atlas) y el dashboard desplegado en Docker. No se rompio nada existente
 en Resumen Ejecutivo (KPIs, sparklines y graficas siguen igual).
 
-### Fase 5 — Diseño: menos donuts, "numero norte", anotaciones — PENDIENTE
+### Fase 5 — Diseño: menos donuts, "numero norte", anotaciones — ✅ Completada (2026-09-16)
 
-- Reemplazar donuts con mas de 3-4 categorias por barras horizontales (mas facil de
-  comparar) en las pestañas que aplique.
-- Elegir una metrica "norte" (ingreso real, probablemente) y destacarla visualmente
-  sobre las demas en el Resumen Ejecutivo, en vez de 6 KPIs del mismo tamaño.
-- Anotaciones en graficas de tendencia cuando haya un evento conocido que explique un
-  pico/caida (por ahora manual; automatizar si hace falta mas adelante).
+**Menos donuts**: los 2 donuts de "estado de cita" (6 estados posibles —
+`ESTADOS_VALIDOS`— dificiles de comparar en un pie) se reemplazaron por barras
+horizontales ordenadas: "Distribución de Estados de Citas" (Resumen Ejecutivo) y
+"Distribución Real de Estados en Datos de Entrenamiento" (Random Forest). El resto de
+donuts del dashboard (metodo de pago, gift cards, membresias, waitlist, segmentos de
+cliente) tienen 2-4 categorias — se dejaron igual, no aplica el criterio de la fase.
+
+**Metrica norte**: Ingreso Real ahora es una tarjeta destacada (fondo dorado
+degradado, numero grande, sparkline propia mas alta) arriba de las otras 5 metricas del
+Resumen Ejecutivo (Total Citas, Clientes Únicos, Ticket Promedio, Tasa Cancelación,
+Barberos), que bajaron de 6 a 5 columnas del mismo tamaño. Responde directo "¿cuanto
+gano el negocio?" antes que cualquier otra cosa — patron Stripe/GA4 de "primary metric".
+
+**Anotaciones manuales**: nuevo expander "Anotaciones (eventos conocidos)" en el
+sidebar — fecha + nota corta (ej. "Promo verano"), se guardan en `st.session_state`
+(dura la sesion, no se persiste en Mongo — a proposito, es solo para explicar picos al
+verlos, no un registro de eventos del negocio). Se dibujan como lineas verticales
+punteadas con etiqueta sobre las graficas de "Proyección a futuro" (pestaña Demanda).
+No se automatizo la deteccion de "por que" paso un pico — requeriria datos que hoy no
+se capturan (promociones, feriados, etc.), consistente con "por ahora manual".
+
+Sin cambios en `config/mongo_spark_conexion_sinnulos.py` — todo esto es presentacion
+sobre datos ya cargados (`unidades/unidad_5_visualizacion/main_dashboard.py`).
+
+Probado con datos reales en Docker: metrica norte muestra $19,590 (Ingreso Real)
+destacada; barras horizontales de estados renderizan ordenadas de mayor a menor: cero
+regresion en KPIs/sparklines/alertas de fases anteriores; anotacion de prueba
+("2026-08-02 — Promo verano") aparecio correctamente como linea punteada + etiqueta en
+ambas graficas de proyeccion (citas e ingreso).
 
 ### Fase 6 — Funnel de conversion — BLOQUEADA
 
