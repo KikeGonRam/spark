@@ -81,7 +81,8 @@ from pyspark.ml.evaluation import RegressionEvaluator, BinaryClassificationEvalu
 from config.mongo_spark_conexion_sinnulos import (
     get_spark_session, get_clientes_df, get_pagos_df, get_loyalty_df,
     get_horarios_df, get_utilizacion_barberos_df, get_productos_df,
-    get_pedidos_df, get_top_productos_df, _connect_db, DIAS_SEMANA, MESES,
+    get_pedidos_df, get_top_productos_df, _connect_db, _connect_analytics_db,
+    DIAS_SEMANA, MESES,
     FEATURES_CANCEL, PAGO_ESTADO_VERIFICADO,
 )
 
@@ -1015,15 +1016,27 @@ for d in insights:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# GUARDAR TODO EN MONGODB (reemplaza por completo la colección anterior —
-# los insights son un "estado calculado", no un historial que deba acumularse)
+# PUBLICAR EN MONGODB ANALYTICS. Primero escribe una colección temporal y
+# después la renombra con dropTarget: el cambio visible para Laravel es atómico.
 # ═══════════════════════════════════════════════════════════════════════════
-client, database = _connect_db()
+client, database = _connect_analytics_db()
 db = client[database]
-db["analytics_insights"].delete_many({})
-if insights:
-    db["analytics_insights"].insert_many(insights)
-client.close()
+target_collection = "analytics_insights"
+temporary_collection = f"{target_collection}__{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
+
+try:
+    db.create_collection(temporary_collection)
+    if insights:
+        db[temporary_collection].insert_many(insights, ordered=True)
+    db[temporary_collection].create_index([("roles", 1), ("generado_en", -1)])
+    db[temporary_collection].create_index("barbero_user_id")
+    db[temporary_collection].create_index("barbero_perfil_id")
+    db[temporary_collection].rename(target_collection, dropTarget=True)
+except Exception:
+    db.drop_collection(temporary_collection)
+    raise
+finally:
+    client.close()
 
 spark.stop()
 print(f"\n{len(insights)} insights escritos en la colección 'analytics_insights'.")

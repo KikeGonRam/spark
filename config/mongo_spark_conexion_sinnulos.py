@@ -313,6 +313,35 @@ def _connect_db():
     return MongoClient(uri), database
 
 
+def _connect_analytics_db():
+    """Conexión de escritura limitada a la base de derivados analíticos."""
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    load_dotenv(dotenv_path=env_path)
+    explicit_uri = os.getenv("ANALYTICS_MONGODB_URI")
+    user = os.getenv("ANALYTICS_MONGO_USER")
+    password_raw = os.getenv("ANALYTICS_MONGO_PASSWORD")
+    cluster = os.getenv("ANALYTICS_MONGO_CLUSTER")
+    database = os.getenv("ANALYTICS_MONGO_DB")
+
+    missing = [
+        name for name, value in {
+            "ANALYTICS_MONGO_USER": user,
+            "ANALYTICS_MONGO_PASSWORD": password_raw,
+            "ANALYTICS_MONGO_CLUSTER": cluster,
+            "ANALYTICS_MONGO_DB": database,
+        }.items() if not value
+    ]
+    if not explicit_uri and missing:
+        raise RuntimeError(
+            "Faltan variables de la conexión analytics: " + ", ".join(missing)
+        )
+    if database == os.getenv("MONGO_DB"):
+        raise RuntimeError("ANALYTICS_MONGO_DB debe ser distinta de MONGO_DB.")
+
+    uri = explicit_uri or f"mongodb+srv://{user}:{quote_plus(password_raw)}@{cluster}"
+    return MongoClient(uri), database
+
+
 # Roles reales de `barber` (RolePermissionSeeder) autorizados a ver este
 # dashboard de negocio. 'ingeniero' es el nombre real del rol en la base de
 # datos (compartido con barber/frontend-urban) — aqui se presenta como
