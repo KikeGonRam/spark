@@ -539,6 +539,62 @@ def get_clientes_df(spark, df=None, fecha_ref=None):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Helper: COHORTES DE RETENCIÓN — plan spark-advanced-analytics-plan, Fase 1
+# ─────────────────────────────────────────────────────────────────────────────
+def get_cohortes_df(pdf: pd.DataFrame) -> pd.DataFrame:
+    """Tabla de cohortes de retención (patrón Mixpanel/Amplitude): agrupa
+    clientes por el mes de su PRIMERA cita (cohorte) y calcula qué % de esa
+    cohorte tuvo al menos otra cita en cada mes siguiente. Responde "¿los
+    clientes que llegan se quedan?", no solo "¿cuántos clientes tenemos?".
+    100% en pandas sobre el `pdf` principal ya cargado — no consulta Mongo
+    de nuevo. `pdf` es el DataFrame pandas de `get_spark_session()`/`cargar_datos()`."""
+    if pdf is None or pdf.empty or "client_id" not in pdf:
+        return pd.DataFrame()
+
+    d = pdf[pdf["client_id"] != ""].copy()
+    if d.empty:
+        return pd.DataFrame()
+    d["fecha_dt"] = pd.to_datetime(d["fecha"].str[:10], errors="coerce")
+    d = d.dropna(subset=["fecha_dt"])
+    if d.empty:
+        return pd.DataFrame()
+
+    d["mes_cita"] = d["fecha_dt"].dt.to_period("M")
+    primera_cita = d.groupby("client_id")["mes_cita"].min().rename("cohorte")
+    d = d.join(primera_cita, on="client_id")
+    d["mes_desde_cohorte"] = (
+        (d["mes_cita"].dt.year - d["cohorte"].dt.year) * 12
+        + (d["mes_cita"].dt.month - d["cohorte"].dt.month)
+    )
+
+    tamano_cohorte = d.loc[d["mes_desde_cohorte"] == 0].groupby("cohorte")["client_id"].nunique()
+    activos = (d.groupby(["cohorte", "mes_desde_cohorte"])["client_id"].nunique()
+               .reset_index(name="clientes_activos"))
+    activos["tamano_cohorte"] = activos["cohorte"].map(tamano_cohorte)
+    activos["retencion_pct"] = (activos["clientes_activos"] / activos["tamano_cohorte"] * 100).round(1)
+    activos["cohorte"] = activos["cohorte"].astype(str)
+    return activos.sort_values(["cohorte", "mes_desde_cohorte"]).reset_index(drop=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: CLV PROYECTADO — plan spark-advanced-analytics-plan, Fase 1
+# ─────────────────────────────────────────────────────────────────────────────
+def get_clv_df(spark, df, horizonte_meses: int = 12) -> pd.DataFrame:
+    """CLV (Customer Lifetime Value) proyectado con la fórmula simplificada
+    estándar de e-commerce (la misma que usa el CLV básico de Shopify):
+    gasto_promedio × frecuencia_mensual × horizonte_meses. Se construye
+    sobre get_clientes_df() (RFM), que ya calcula gasto_promedio/
+    frecuencia_mensual — no requiere datos nuevos ni consultas extra."""
+    clientes = get_clientes_df(spark, df).toPandas()
+    if clientes.empty:
+        return clientes
+    clientes[f"clv_proyectado_{horizonte_meses}m"] = (
+        clientes["gasto_promedio"] * clientes["frecuencia_mensual"] * horizonte_meses
+    ).round(2)
+    return clientes
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Helper: DataFrame de PAGOS (colección `payments`) — control de calidad
 # ─────────────────────────────────────────────────────────────────────────────
 def get_pagos_df(spark):
