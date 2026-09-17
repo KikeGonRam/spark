@@ -29,7 +29,7 @@ from config.mongo_spark_conexion_sinnulos import (
     get_referidos_df, get_rifas_df, get_waitlist_df,
     get_comisiones_df, get_resenas_df,
     autenticar_usuario, google_login_url, verificar_google_token,
-    get_cohortes_df, get_clv_df, get_forecast_df,
+    get_cohortes_df, get_clv_df, get_forecast_df, get_anomalias_df,
 )
 
 # Nombre de presentación por rol real de `barber` — solo para lo que se
@@ -547,6 +547,10 @@ def analizar_cohortes_clv(_spark, _df, _pdf):
 def analizar_forecast(_pdf):
     return get_forecast_df(_pdf)
 
+@st.cache_resource(show_spinner="Buscando anomalías en citas e ingreso…")
+def analizar_anomalias(_pdf):
+    return get_anomalias_df(_pdf)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
@@ -897,6 +901,26 @@ tabs = st.tabs(_visible)
 if "Resumen Ejecutivo" in _visible:
     with tabs[_visible.index("Resumen Ejecutivo")]:
         st.subheader("Resumen Ejecutivo del Negocio")
+
+        _anomalias = analizar_anomalias(pdf)
+        if not _anomalias.empty:
+            st.markdown("#### 🔔 Alertas")
+            for _, _fila in _anomalias.head(5).iterrows():
+                _flecha = "📈" if _fila["tipo"] == "arriba" else "📉"
+                _valor_fmt = f"${_fila['valor_real']:,.0f}" if _fila["metrica"] == "Ingreso" else f"{_fila['valor_real']:.0f}"
+                _esperado_fmt = f"${_fila['valor_esperado']:,.0f}" if _fila["metrica"] == "Ingreso" else f"{_fila['valor_esperado']:.0f}"
+                _mensaje = (
+                    f"{_flecha} Semana del **{_fila['fecha'].strftime('%d/%m/%Y')}**: "
+                    f"**{_fila['metrica']}** estuvo **{abs(_fila['desviacion_pct']):.0f}% "
+                    f"{'por arriba' if _fila['tipo'] == 'arriba' else 'por debajo'}** de lo esperado "
+                    f"({_valor_fmt} vs. {_esperado_fmt} esperado)."
+                )
+                if _fila["tipo"] == "arriba":
+                    st.success(_mensaje)
+                else:
+                    st.warning(_mensaje)
+            st.caption("Comparación contra el promedio móvil de las 4 semanas anteriores (±1.5 desviaciones estándar).")
+            st.divider()
 
         col_a, col_b = st.columns(2)
 

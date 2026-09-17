@@ -102,11 +102,30 @@ poco historial, exactamente el comportamiento esperado (no se infló artificialm
 la confianza). Verificado en el dashboard desplegado en Docker que los valores
 coinciden con la prueba independiente.
 
-### Fase 4 — Deteccion de anomalias — PENDIENTE
+### Fase 4 — Deteccion de anomalias — ✅ Completada (2026-09-16)
 
-Alertas automaticas tipo "esta semana el ingreso esta 30% por debajo de lo esperado"
-en vez de que el dueño tenga que notar el patron el mismo. Empezar simple (desviacion
-vs promedio movil + N desviaciones estandar) antes de algo mas sofisticado.
+Nueva seccion "🔔 Alertas" al inicio de la pestaña "Resumen Ejecutivo" (antes de las
+graficas existentes), con mensajes tipo "Semana del 13/09/2026: Ingreso estuvo 67% por
+arriba de lo esperado" — verde (`st.success`) para desviaciones hacia arriba, amarillo
+(`st.warning`) para hacia abajo. Muestra hasta 5 alertas mas recientes.
+
+Metodo simple a proposito (mismo criterio que Fase 3): para cada semana, se compara el
+valor real de citas/ingreso contra el promedio movil de las 4 semanas anteriores: si la
+desviacion es >= 1.5 desviaciones estandar, se marca como anomalia. No es un modelo
+estadistico complejo — es honesto para el poco historial disponible (~16 semanas).
+Requiere minimo 6 semanas de historial o no muestra nada (sin forzar alertas sin
+sentido).
+
+Funcion nueva en `config/mongo_spark_conexion_sinnulos.py`:
+- `get_anomalias_df(pdf, ventana=4, umbral_std=1.5, minimo_semanas=6)` — devuelve un
+  DataFrame vacio o con una fila por semana anomala (fecha, metrica, valor_real,
+  valor_esperado, desviacion_pct, z_score, tipo).
+
+Probado con datos reales (100 citas, jun-sep 2026): detecto 4 anomalias reales, todas
+hacia arriba (picos, no caidas) — 13/09 ingreso +67%, 02/08 citas +148% e ingreso +119%,
+19/07 citas +75%. Coinciden exactamente entre la prueba independiente (script standalone
+contra MongoDB Atlas) y el dashboard desplegado en Docker. No se rompio nada existente
+en Resumen Ejecutivo (KPIs, sparklines y graficas siguen igual).
 
 ### Fase 5 — Diseño: menos donuts, "numero norte", anotaciones — PENDIENTE
 
