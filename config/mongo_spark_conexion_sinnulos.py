@@ -62,6 +62,7 @@ from pyspark.ml.feature import VectorAssembler
 from pymongo import MongoClient
 from dotenv import load_dotenv
 import pandas as pd
+import numpy as np
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -592,6 +593,72 @@ def get_clv_df(spark, df, horizonte_meses: int = 12) -> pd.DataFrame:
         clientes["gasto_promedio"] * clientes["frecuencia_mensual"] * horizonte_meses
     ).round(2)
     return clientes
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: FORECASTING — plan spark-advanced-analytics-plan, Fase 3
+# ─────────────────────────────────────────────────────────────────────────────
+def get_forecast_df(pdf: pd.DataFrame, semanas_adelante: int = 4, minimo_semanas: int = 4):
+    """Proyección honesta de citas/ingreso para las próximas semanas: regresión
+    lineal simple (numpy.polyfit) sobre la serie semanal histórica, con banda
+    de incertidumbre de ±1.96 desviaciones estándar del residuo.
+
+    A propósito NO se usa un modelo mas complejo (ARIMA/Prophet/LSTM): con
+    unos pocos meses de historial real esos modelos sobreajustarían y
+    darían una falsa sensación de precisión. Una tendencia lineal simple con
+    su R² visible es más honesta sobre lo que sí se puede saber con estos
+    datos.
+
+    Devuelve None si hay menos de `minimo_semanas` semanas de historial (no
+    tiene sentido proyectar con casi nada de datos), o un dict:
+        {"citas": {...}, "ingreso": {...}}
+    donde cada entrada tiene "historico" (DataFrame fecha/valor real),
+    "proyeccion" (DataFrame fecha/valor/min/max), "r2" y "tendencia_semanal"."""
+    if pdf is None or pdf.empty or "fecha" not in pdf:
+        return None
+    d = pdf.copy()
+    d["fecha_dt"] = pd.to_datetime(d["fecha"].str[:10], errors="coerce")
+    d = d.dropna(subset=["fecha_dt"])
+    if d.empty:
+        return None
+    d["ingreso_real"] = d["ingreso"].where(d["estado"] != "cancelada", 0.0)
+
+    semanal = (d.set_index("fecha_dt")
+               .resample("W")
+               .agg(citas=("estado", "size"), ingreso=("ingreso_real", "sum"))
+               .reset_index())
+    if len(semanal) < minimo_semanas:
+        return None
+
+    resultado = {}
+    x = np.arange(len(semanal), dtype=float)
+    for columna in ["citas", "ingreso"]:
+        y = semanal[columna].to_numpy(dtype=float)
+        pendiente, intercepto = np.polyfit(x, y, 1)
+        pred_hist = pendiente * x + intercepto
+        residuos = y - pred_hist
+        error_std = float(residuos.std(ddof=2)) if len(y) > 2 else float(residuos.std())
+        ss_tot = float(((y - y.mean()) ** 2).sum())
+        ss_res = float((residuos ** 2).sum())
+        r2 = round(1 - ss_res / ss_tot, 3) if ss_tot > 0 else 0.0
+
+        x_fut = np.arange(len(semanal), len(semanal) + semanas_adelante, dtype=float)
+        y_fut = pendiente * x_fut + intercepto
+        banda = 1.96 * error_std
+        fechas_fut = [semanal["fecha_dt"].max() + pd.Timedelta(weeks=i + 1) for i in range(semanas_adelante)]
+
+        resultado[columna] = {
+            "historico": pd.DataFrame({"fecha": semanal["fecha_dt"], "valor": y}),
+            "proyeccion": pd.DataFrame({
+                "fecha": fechas_fut,
+                "valor": np.clip(y_fut, 0, None),
+                "min": np.clip(y_fut - banda, 0, None),
+                "max": y_fut + banda,
+            }),
+            "r2": r2,
+            "tendencia_semanal": round(float(pendiente), 2),
+        }
+    return resultado
 
 
 # ─────────────────────────────────────────────────────────────────────────────

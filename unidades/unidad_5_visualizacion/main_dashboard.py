@@ -29,7 +29,7 @@ from config.mongo_spark_conexion_sinnulos import (
     get_referidos_df, get_rifas_df, get_waitlist_df,
     get_comisiones_df, get_resenas_df,
     autenticar_usuario, google_login_url, verificar_google_token,
-    get_cohortes_df, get_clv_df,
+    get_cohortes_df, get_clv_df, get_forecast_df,
 )
 
 # Nombre de presentación por rol real de `barber` — solo para lo que se
@@ -542,6 +542,10 @@ def analizar_comisiones_resenas(_df_pandas):
 @st.cache_resource(show_spinner="Calculando cohortes de retención y CLV…")
 def analizar_cohortes_clv(_spark, _df, _pdf):
     return get_cohortes_df(_pdf), get_clv_df(_spark, _df)
+
+@st.cache_resource(show_spinner="Proyectando citas e ingreso a futuro…")
+def analizar_forecast(_pdf):
+    return get_forecast_df(_pdf)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SIDEBAR
@@ -1939,6 +1943,54 @@ if "Demanda" in _visible:
                 fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                                    font_color="white", coloraxis_showscale=False)
                 st.plotly_chart(fig4, use_container_width=True)
+
+            st.divider()
+            st.markdown("#### Proyección a futuro (próximas semanas)")
+            _forecast = analizar_forecast(pdf)
+            if _forecast is None:
+                st.info("Todavía no hay suficiente historial semanal (mínimo 4 semanas) para "
+                        "proyectar hacia adelante con algo de confianza — aparecerá automáticamente "
+                        "en cuanto haya más semanas de citas reales.", icon=":material/info:")
+            else:
+                st.info("Proyección por tendencia lineal simple, no un modelo complejo tipo "
+                        "ARIMA/Prophet: con pocos meses de historial real, un modelo más sofisticado "
+                        "sobreajustaría y daría una falsa sensación de precisión. El R² de cada "
+                        "proyección indica qué tan bien la tendencia lineal explica el histórico — "
+                        "entre más bajo, más ancha debería sentirse la incertidumbre real.",
+                        icon=":material/info:")
+
+                col_p1, col_p2 = st.columns(2)
+                for columna, col_dest, color_, nombre in [
+                    ("citas", col_p1, GOLD, "Citas por semana"),
+                    ("ingreso", col_p2, GREEN, "Ingreso por semana ($MXN)"),
+                ]:
+                    datos = _forecast[columna]
+                    with col_dest:
+                        fig_f = go.Figure()
+                        fig_f.add_trace(go.Scatter(
+                            x=datos["historico"]["fecha"], y=datos["historico"]["valor"],
+                            mode="lines+markers", name="Real", line=dict(color="#999", width=2)))
+                        fig_f.add_trace(go.Scatter(
+                            x=datos["proyeccion"]["fecha"], y=datos["proyeccion"]["max"],
+                            mode="lines", line=dict(width=0), showlegend=False, hoverinfo="skip"))
+                        fig_f.add_trace(go.Scatter(
+                            x=datos["proyeccion"]["fecha"], y=datos["proyeccion"]["min"],
+                            mode="lines", line=dict(width=0), fill="tonexty",
+                            fillcolor=f"rgba({int(color_[1:3],16)},{int(color_[3:5],16)},{int(color_[5:7],16)},0.15)",
+                            showlegend=False, hoverinfo="skip"))
+                        fig_f.add_trace(go.Scatter(
+                            x=datos["proyeccion"]["fecha"], y=datos["proyeccion"]["valor"],
+                            mode="lines+markers", name="Proyección",
+                            line=dict(color=color_, width=2, dash="dash")))
+                        fig_f.update_layout(
+                            title=f"{nombre} — R²={datos['r2']:.2f}",
+                            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                            font_color="white", legend=dict(orientation="h", y=-0.2),
+                        )
+                        st.plotly_chart(fig_f, use_container_width=True)
+                        tendencia = datos["tendencia_semanal"]
+                        direccion = "subiendo" if tendencia > 0 else "bajando" if tendencia < 0 else "estable"
+                        st.caption(f"Tendencia: {direccion} ~{abs(tendencia):,.1f} por semana.")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 12 — KMEANS

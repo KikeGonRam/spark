@@ -78,14 +78,29 @@ No se agrego el selector "comparar contra mismo mes año anterior" (se descarto 
 ahora: con ~3 meses de historial real no hay suficiente dato para una comparacion
 interanual util todavia — revisar cuando haya mas historia).
 
-### Fase 3 — Forecasting (proyeccion a futuro) — PENDIENTE
+### Fase 3 — Forecasting (proyeccion a futuro) — ✅ Completada (2026-09-16)
 
-Hoy Regresion es descriptiva (explica el pasado). Agregar una proyeccion real hacia
-adelante: ingreso/citas esperadas para las proximas 2-4 semanas, con banda de
-incertidumbre. Requiere series de tiempo con suficiente historial — validar con datos
-reales antes de prometer precision (con pocos meses de historia el intervalo de
-confianza sera ancho, comunicarlo honestamente en vez de ocultarlo, mismo estandar de
-"sin fuga de datos, metricas honestas" que ya sigue el resto del dashboard).
+Nueva seccion "Proyección a futuro (próximas semanas)" dentro de la pestaña Demanda
+(no una pestaña aparte — complementa el analisis de patrones ya existente ahi).
+Proyecta citas e ingreso semanal a 4 semanas via regresion lineal simple
+(`numpy.polyfit`) sobre la serie semanal historica, con banda de incertidumbre de
+±1.96 desviaciones estandar del residuo, y el R² del ajuste visible en el titulo de
+cada grafica.
+
+A proposito NO se uso ARIMA/Prophet/LSTM: con ~16 semanas de historial real, un modelo
+mas complejo sobreajustaria y daria una falsa sensacion de precision. Se requieren
+minimo 4 semanas de historial o la seccion muestra un aviso en vez de forzar una
+proyeccion sin sentido.
+
+Funcion nueva en `config/mongo_spark_conexion_sinnulos.py`:
+- `get_forecast_df(pdf, semanas_adelante=4, minimo_semanas=4)` — devuelve None o un
+  dict `{"citas": {...}, "ingreso": {...}}` con historico/proyeccion/r2/tendencia.
+
+Probado con datos reales (16 semanas, jun-oct 2026): R²=0.04 (citas) y R²=0.10
+(ingreso) — honestamente bajos, reflejo real de lo ruidosos que son los datos con tan
+poco historial, exactamente el comportamiento esperado (no se infló artificialmente
+la confianza). Verificado en el dashboard desplegado en Docker que los valores
+coinciden con la prueba independiente.
 
 ### Fase 4 — Deteccion de anomalias — PENDIENTE
 
