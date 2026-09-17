@@ -28,7 +28,13 @@ from config.mongo_spark_conexion_sinnulos import (
     get_membresias_df, get_membership_invoices_df,
     get_referidos_df, get_rifas_df, get_waitlist_df,
     get_comisiones_df, get_resenas_df,
+    autenticar_usuario,
 )
+
+# Nombre de presentación por rol real de `barber` — solo para lo que se
+# muestra en spark, sin renombrar el rol "ingeniero" en la base de datos
+# (eso implica tocar barber + frontend-urban, ver autenticar_usuario()).
+_NOMBRE_ROL = {"administrador": "Administrador", "ingeniero": "Analista"}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONFIGURACIÓN
@@ -70,6 +76,40 @@ st.markdown(f"""
   .block-container {{ padding-top: 1.5rem; }}
 </style>
 """, unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONTROL DE ACCESO — solo administrador / analista (rol real "ingeniero")
+# ─────────────────────────────────────────────────────────────────────────────
+if "auth_user" not in st.session_state:
+    st.session_state.auth_user = None
+
+if st.session_state.auth_user is None:
+    _c1, _c2, _c3 = st.columns([1, 1, 1])
+    with _c2:
+        st.image(_LOGO_PATH, width=96)
+        st.markdown(f"<h2 style='color:{GOLD};'>UrbanBlade Analytics</h2>", unsafe_allow_html=True)
+        st.caption("Acceso restringido — solo Administrador y Analista (staff técnico).")
+        with st.form("login_form"):
+            email = st.text_input("Correo")
+            password = st.text_input("Contraseña", type="password")
+            enviado = st.form_submit_button("Entrar", use_container_width=True)
+        if enviado:
+            with st.spinner("Verificando credenciales…"):
+                usuario = autenticar_usuario(email, password)
+            if usuario is None:
+                st.error("Correo, contraseña o rol no autorizado.")
+            else:
+                st.session_state.auth_user = usuario
+                st.rerun()
+    st.stop()
+
+with st.sidebar:
+    _rol_txt = _NOMBRE_ROL.get(st.session_state.auth_user["rol"], st.session_state.auth_user["rol"])
+    st.success(f"**{st.session_state.auth_user['name']}** ({_rol_txt})", icon=":material/verified_user:")
+    if st.button("Cerrar sesión", use_container_width=True):
+        st.session_state.auth_user = None
+        st.rerun()
+    st.divider()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CARGA DE DATOS (UNA VEZ POR SESIÓN)
