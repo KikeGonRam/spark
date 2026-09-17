@@ -358,6 +358,50 @@ def autenticar_usuario(email: str, password: str):
     return {"name": user.get("name", "Usuario"), "email": user.get("email", ""), "rol": rol_encontrado}
 
 
+def google_login_url() -> str:
+    """URL para iniciar el login con Google — reutiliza el OAuth de barber
+    (SocialAuthController::redirect) con ?target=spark, que hace que
+    barber regrese aqui (BARBER_API_URL/../ver callback) en vez de a
+    frontend-urban. No requiere una redirect_uri nueva en Google Cloud
+    Console: la URL de callback registrada en Google no cambia, solo el
+    destino final despues de que barber emite el token."""
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    load_dotenv(dotenv_path=env_path)
+    base = os.getenv("BARBER_API_URL", "http://localhost:8000").rstrip("/")
+    return f"{base}/api/v1/auth/google/redirect?target=spark"
+
+
+def verificar_google_token(token: str):
+    """Verifica un token emitido por barber tras un login con Google exitoso,
+    llamando a GET /api/v1/auth/me (la propia API de barber, no Mongo
+    directo) — barber es la fuente de verdad de la identidad y el rol.
+    Devuelve {"name", "email", "rol"} si el rol esta en ROLES_AUTORIZADOS,
+    o None si el token es invalido o el rol no esta autorizado."""
+    import requests
+
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    load_dotenv(dotenv_path=env_path)
+    base = os.getenv("BARBER_API_URL", "http://localhost:8000").rstrip("/")
+
+    try:
+        resp = requests.get(
+            f"{base}/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+            timeout=8,
+        )
+    except requests.RequestException:
+        return None
+    if resp.status_code != 200:
+        return None
+
+    user = resp.json().get("user", {})
+    roles = user.get("roles") or []
+    rol_encontrado = next((r for r in roles if r in ROLES_AUTORIZADOS), None)
+    if rol_encontrado is None:
+        return None
+    return {"name": user.get("name", "Usuario"), "email": user.get("email", ""), "rol": rol_encontrado}
+
+
 def _build_spark():
     os.environ["PYSPARK_PYTHON"]        = sys.executable
     os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable

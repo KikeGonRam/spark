@@ -28,7 +28,7 @@ from config.mongo_spark_conexion_sinnulos import (
     get_membresias_df, get_membership_invoices_df,
     get_referidos_df, get_rifas_df, get_waitlist_df,
     get_comisiones_df, get_resenas_df,
-    autenticar_usuario,
+    autenticar_usuario, google_login_url, verificar_google_token,
 )
 
 # Nombre de presentación por rol real de `barber` — solo para lo que se
@@ -83,12 +83,32 @@ st.markdown(f"""
 if "auth_user" not in st.session_state:
     st.session_state.auth_user = None
 
+# Google redirige aqui con ?google_token=... tras un login exitoso en barber
+# (SocialAuthController::callback con target=spark) — se procesa una sola
+# vez y se limpia el query param para que un refresh no lo reintente.
+_google_token = st.query_params.get("google_token")
+_google_error = st.query_params.get("google_error")
+if _google_token and st.session_state.auth_user is None:
+    with st.spinner("Verificando tu cuenta de Google…"):
+        _google_user = verificar_google_token(_google_token)
+    st.query_params.clear()
+    if _google_user is None:
+        st.session_state.auth_user = None
+        st.session_state["_google_login_error"] = True
+    else:
+        st.session_state.auth_user = _google_user
+    st.rerun()
+
 if st.session_state.auth_user is None:
     _c1, _c2, _c3 = st.columns([1, 1, 1])
     with _c2:
         st.image(_LOGO_PATH, width=96)
         st.markdown(f"<h2 style='color:{GOLD};'>UrbanBlade Analytics</h2>", unsafe_allow_html=True)
         st.caption("Acceso restringido — solo Administrador y Analista (staff técnico).")
+        if _google_error or st.session_state.pop("_google_login_error", False):
+            st.error("No se pudo iniciar sesión con Google, o tu cuenta no tiene el rol autorizado.")
+        st.link_button("Iniciar sesión con Google", google_login_url(), use_container_width=True)
+        st.caption("— o con correo y contraseña —")
         with st.form("login_form"):
             email = st.text_input("Correo")
             password = st.text_input("Contraseña", type="password")
