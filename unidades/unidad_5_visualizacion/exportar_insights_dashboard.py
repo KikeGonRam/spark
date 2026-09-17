@@ -888,7 +888,11 @@ if loy_df is not None:
 # UNIDAD II — Inventario: alertas de reorden
 # ═══════════════════════════════════════════════════════════════════════════
 productos = get_productos_df()
-alertas = productos[productos["necesita_reorden"]]
+alertas = (
+    productos[productos["necesita_reorden"]]
+    if "necesita_reorden" in productos.columns
+    else productos.iloc[0:0]
+)
 agregar(
     tipo="inventario_alertas", unidad="II",
     roles=["administrador", "recepcionista"],

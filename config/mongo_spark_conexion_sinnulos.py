@@ -305,11 +305,17 @@ def _extract_records(db):
 def _connect_db():
     env_path = Path(__file__).resolve().parent.parent / ".env"
     load_dotenv(dotenv_path=env_path)
+    explicit_uri = os.getenv("CORE_MONGODB_URI")
     user     = os.getenv("MONGO_USER")
-    password = quote_plus(os.getenv("MONGO_PASSWORD"))
+    password_raw = os.getenv("MONGO_PASSWORD")
     cluster  = os.getenv("MONGO_CLUSTER")
     database = os.getenv("MONGO_DB")
-    uri = f"mongodb+srv://{user}:{password}@{cluster}"
+    if not explicit_uri and not all([user, password_raw, cluster]):
+        raise RuntimeError(
+            "Configura CORE_MONGODB_URI para local o MONGO_USER, "
+            "MONGO_PASSWORD y MONGO_CLUSTER para Atlas."
+        )
+    uri = explicit_uri or f"mongodb+srv://{user}:{quote_plus(password_raw)}@{cluster}"
     return MongoClient(uri), database
 
 
