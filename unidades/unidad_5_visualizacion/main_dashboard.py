@@ -767,30 +767,108 @@ st.markdown(f"<h1 style='text-align:center;color:{GOLD};font-size:2.2rem;'><i cl
 st.markdown("<p style='text-align:center;color:#888;margin-top:-10px;'>Panel de inteligencia de negocio · Datos en tiempo real desde MongoDB Atlas</p>", unsafe_allow_html=True)
 st.divider()
 
+def _serie_semanal(pdf_data: pd.DataFrame) -> pd.DataFrame:
+    """Series semanales (últimas 10 semanas con datos) para las mini-gráficas
+    junto a cada KPI — mismo patrón que usa Stripe en su dashboard."""
+    cols = ["citas", "ingreso", "clientes", "ticket_promedio", "cancel_pct", "barberos"]
+    if pdf_data is None or pdf_data.empty or "fecha" not in pdf_data:
+        return pd.DataFrame(columns=cols)
+    d = pdf_data.copy()
+    d["fecha_dt"] = pd.to_datetime(d["fecha"].str[:10], errors="coerce")
+    d = d.dropna(subset=["fecha_dt"])
+    if d.empty:
+        return pd.DataFrame(columns=cols)
+    d["ingreso_real"] = d["ingreso"].where(d["estado"] != "cancelada", 0.0)
+    d["es_cancel"] = (d["estado"] == "cancelada").astype(int)
+    g = d.set_index("fecha_dt").resample("W")
+    serie = pd.DataFrame({
+        "citas":           g.size(),
+        "ingreso":         g["ingreso_real"].sum(),
+        "clientes":        g["cliente"].nunique(),
+        "ticket_promedio": g["ingreso"].mean(),
+        "cancel_pct":      g["es_cancel"].mean() * 100,
+        "barberos":        g["barbero"].nunique(),
+    }).fillna(0)
+    return serie.tail(10)
+
+
+def _sparkline(serie: pd.Series, color: str):
+    """Mini-gráfica sin ejes ni gridlines al estilo Stripe — solo la forma
+    de la tendencia reciente, no números exactos (para eso está el KPI)."""
+    if serie is None or len(serie.dropna()) < 2:
+        return None
+    fig = go.Figure(go.Scatter(
+        x=list(range(len(serie))), y=serie.values, mode="lines",
+        line=dict(color=color, width=2), fill="tozeroy",
+    ))
+    fig.update_traces(fillcolor=f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.15)")
+    fig.update_layout(
+        height=45, margin=dict(l=0, r=0, t=0, b=0),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        xaxis=dict(visible=False), yaxis=dict(visible=False), showlegend=False,
+    )
+    return fig
+
+
 c1, c2, c3, c4, c5, c6 = st.columns(6)
 canceladas   = pdf["es_cancelada"].sum() if "es_cancelada" in pdf else (pdf["estado"] == "cancelada").sum()
 ingreso_real = pdf.loc[pdf["estado"] != "cancelada", "ingreso"].sum()
 
-# Delta del último mes con datos vs el mes anterior — responde de inmediato
-# la pregunta "¿y eso subió o bajó?" sin abrir la pestaña de Demanda.
-_delta_citas = _delta_ingreso = None
+# Delta del último mes con datos vs el mes anterior, para los 6 KPIs (antes
+# solo Total Citas e Ingreso Real lo tenían) — responde de inmediato la
+# pregunta "¿y eso subió o bajó?" sin abrir la pestaña de Demanda.
+_delta = {"citas": None, "ingreso": None, "clientes": None, "ticket": None, "cancel": None}
 if {"anio", "mes"}.issubset(pdf.columns) and (pdf["anio"] > 0).any():
     _mensual = (pdf[pdf["anio"] > 0]
-                .assign(_ing=lambda d: d["ingreso"].where(d["estado"] != "cancelada", 0.0))
+                .assign(_ing=lambda d: d["ingreso"].where(d["estado"] != "cancelada", 0.0),
+                        _cancel=lambda d: (d["estado"] == "cancelada").astype(int))
                 .groupby(["anio", "mes"])
-                .agg(citas=("ingreso", "size"), ingreso=("_ing", "sum"))
+                .agg(citas=("ingreso", "size"), ingreso=("_ing", "sum"),
+                     clientes=("cliente", "nunique"), ticket=("ingreso", "mean"),
+                     cancel_pct=("_cancel", "mean"))
                 .sort_index())
     if len(_mensual) >= 2:
         _ult, _prev = _mensual.iloc[-1], _mensual.iloc[-2]
-        _delta_citas   = f"{int(_ult['citas'] - _prev['citas']):+,} vs mes anterior"
-        _delta_ingreso = f"{_ult['ingreso'] - _prev['ingreso']:+,.0f} vs mes anterior"
+        _delta["citas"]    = f"{int(_ult['citas'] - _prev['citas']):+,} vs mes anterior"
+        _delta["ingreso"]  = f"{_ult['ingreso'] - _prev['ingreso']:+,.0f} vs mes anterior"
+        _delta["clientes"] = f"{int(_ult['clientes'] - _prev['clientes']):+,} vs mes anterior"
+        _delta["ticket"]   = f"{_ult['ticket'] - _prev['ticket']:+,.0f} vs mes anterior"
+        _delta["cancel"]   = f"{(_ult['cancel_pct'] - _prev['cancel_pct']) * 100:+.1f} pts vs mes anterior"
 
-c1.metric("Total Citas",       f"{len(pdf):,}", delta=_delta_citas)
-c2.metric("Clientes Únicos",   f"{pdf['cliente'].nunique():,}")
-c3.metric("Ingreso Real",      f"${ingreso_real:,.0f}", delta=_delta_ingreso, help="Excluye citas canceladas")
-c4.metric("Ticket Promedio",   f"${pdf['ingreso'].mean():,.0f}" if hay_citas else "$0")
-c5.metric("Tasa Cancelación",  f"{canceladas/len(pdf)*100:.1f}%" if hay_citas else "0.0%")
-c6.metric("Barberos",          pdf["barbero"].nunique())
+_sem = _serie_semanal(pdf)
+_spark_kwargs = dict(use_container_width=True, config={"displayModeBar": False})
+
+with c1:
+    st.metric("Total Citas", f"{len(pdf):,}", delta=_delta["citas"])
+    _fig = _sparkline(_sem["citas"], GOLD)
+    if _fig is not None:
+        st.plotly_chart(_fig, **_spark_kwargs)
+with c2:
+    st.metric("Clientes Únicos", f"{pdf['cliente'].nunique():,}", delta=_delta["clientes"])
+    _fig = _sparkline(_sem["clientes"], BLUE)
+    if _fig is not None:
+        st.plotly_chart(_fig, **_spark_kwargs)
+with c3:
+    st.metric("Ingreso Real", f"${ingreso_real:,.0f}", delta=_delta["ingreso"], help="Excluye citas canceladas")
+    _fig = _sparkline(_sem["ingreso"], GREEN)
+    if _fig is not None:
+        st.plotly_chart(_fig, **_spark_kwargs)
+with c4:
+    st.metric("Ticket Promedio", f"${pdf['ingreso'].mean():,.0f}" if hay_citas else "$0", delta=_delta["ticket"])
+    _fig = _sparkline(_sem["ticket_promedio"], PURPLE)
+    if _fig is not None:
+        st.plotly_chart(_fig, **_spark_kwargs)
+with c5:
+    st.metric("Tasa Cancelación", f"{canceladas/len(pdf)*100:.1f}%" if hay_citas else "0.0%",
+              delta=_delta["cancel"], delta_color="inverse", help="Baja es bueno")
+    _fig = _sparkline(_sem["cancel_pct"], RED)
+    if _fig is not None:
+        st.plotly_chart(_fig, **_spark_kwargs)
+with c6:
+    st.metric("Barberos", pdf["barbero"].nunique())
+    _fig = _sparkline(_sem["barberos"], "#999999")
+    if _fig is not None:
+        st.plotly_chart(_fig, **_spark_kwargs)
 
 st.divider()
 

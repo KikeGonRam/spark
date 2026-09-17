@@ -60,13 +60,23 @@ desplegado en Docker. Bug encontrado y corregido en el camino: el eje Y del heat
 mostraba las fechas garabateadas ("Aug 92026") porque plotly detectaba las etiquetas
 "2026-06" como fechas y las reformateaba — se fuerza `type="category"` en el eje Y.
 
-### Fase 2 — Comparacion de periodos + sparklines en todos los KPIs — PENDIENTE
+### Fase 2 — Comparacion de periodos + sparklines en todos los KPIs — ✅ Completada (2026-09-16)
 
-Hoy solo "Total Citas" e "Ingreso Real" tienen delta vs mes anterior (Resumen
-Ejecutivo). Extender el mismo patron a los 6 KPIs globales, y agregar una mini-grafica
-de tendencia (sparkline, ultimas 8-12 semanas) al lado de cada KPI — patron de Stripe.
-Considerar tambien un selector de "comparar contra: mes anterior / mismo mes año
-anterior" en el sidebar.
+Los 6 KPIs globales (Total Citas, Clientes Únicos, Ingreso Real, Ticket Promedio, Tasa
+Cancelación, Barberos) ahora tienen delta vs mes anterior (antes solo 2 lo tenian), y
+cada uno tiene una mini-grafica de tendencia (sparkline, ultimas 10 semanas con datos)
+debajo — patron de Stripe. Tasa Cancelación usa `delta_color="inverse"` (subir es
+malo) — verificado con JS que renderiza en rojo mientras los demas (mejoras reales)
+renderizan en verde.
+
+Funciones nuevas en `main_dashboard.py` (no en el conector — son puramente de
+presentacion sobre `pdf` ya cargado, no consultan Mongo):
+- `_serie_semanal(pdf)` — resample semanal de citas/ingreso/clientes/ticket/cancelacion/barberos.
+- `_sparkline(serie, color)` — mini-grafica sin ejes, estilo Stripe.
+
+No se agrego el selector "comparar contra mismo mes año anterior" (se descarto por
+ahora: con ~3 meses de historial real no hay suficiente dato para una comparacion
+interanual util todavia — revisar cuando haya mas historia).
 
 ### Fase 3 — Forecasting (proyeccion a futuro) — PENDIENTE
 
