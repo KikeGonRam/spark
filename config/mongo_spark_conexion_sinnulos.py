@@ -361,14 +361,20 @@ def autenticar_usuario(email: str, password: str):
 def google_login_url() -> str:
     """URL para iniciar el login con Google — reutiliza el OAuth de barber
     (SocialAuthController::redirect) con ?target=spark, que hace que
-    barber regrese aqui (BARBER_API_URL/../ver callback) en vez de a
-    frontend-urban. No requiere una redirect_uri nueva en Google Cloud
-    Console: la URL de callback registrada en Google no cambia, solo el
-    destino final despues de que barber emite el token."""
+    barber regrese aqui en vez de a frontend-urban. No requiere una
+    redirect_uri nueva en Google Cloud Console: la URL de callback
+    registrada en Google no cambia, solo el destino final despues de que
+    barber emite el token.
+
+    Usa BARBER_PUBLIC_URL, NO BARBER_API_URL: este link lo abre el
+    NAVEGADOR del usuario, no el proceso de Python. Dentro de Docker,
+    BARBER_API_URL suele ser un nombre de servicio interno (ej. "http://web",
+    solo resoluble entre contenedores) que un navegador en el host no puede
+    resolver — por eso son dos variables separadas."""
     env_path = Path(__file__).resolve().parent.parent / ".env"
     load_dotenv(dotenv_path=env_path)
-    base = os.getenv("BARBER_API_URL", "http://localhost:8000").rstrip("/")
-    return f"{base}/api/v1/auth/google/redirect?target=spark"
+    base = os.getenv("BARBER_PUBLIC_URL") or os.getenv("BARBER_API_URL", "http://localhost:8000")
+    return f"{base.rstrip('/')}/api/v1/auth/google/redirect?target=spark"
 
 
 def verificar_google_token(token: str):
