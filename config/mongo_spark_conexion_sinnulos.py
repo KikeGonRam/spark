@@ -348,100 +348,14 @@ def _connect_analytics_db():
     return MongoClient(uri), database
 
 
-# Roles reales de `barber` (RolePermissionSeeder) autorizados a ver este
-# dashboard de negocio. 'ingeniero' es el nombre real del rol en la base de
-# datos (compartido con barber/frontend-urban) — aqui se presenta como
-# "Analista" solo dentro de spark, sin renombrar el rol real todavia (eso
-# implica tocar ~14 archivos entre barber y frontend-urban, incluido uno con
-# cambios sin commitear de otra persona ahora mismo).
-ROLES_AUTORIZADOS = ["administrador", "ingeniero"]
-
-
-def autenticar_usuario(email: str, password: str):
-    """Verifica credenciales contra la coleccion `users` real de barber
-    (mismo hash bcrypt que usa Laravel Hash::make(), compatible con la
-    libreria bcrypt de Python) y que el usuario tenga un rol autorizado
-    (ROLES_AUTORIZADOS). Devuelve {"name", "email", "rol"} o None."""
-    import bcrypt
-
-    client, database = _connect_db()
-    db = client[database]
-    user = db["users"].find_one({"email": str(email).strip().lower()})
-    if not user or not user.get("password"):
-        client.close()
-        return None
-
-    stored_hash = user["password"].encode("utf-8")
-    try:
-        password_ok = bcrypt.checkpw(password.encode("utf-8"), stored_hash)
-    except ValueError:
-        client.close()
-        return None
-    if not password_ok:
-        client.close()
-        return None
-
-    role_ids = {str(r) for r in (user.get("role_id") or [])}
-    nombre_por_id = {
-        str(r["_id"]): r.get("name")
-        for r in db["roles"].find({"name": {"$in": ROLES_AUTORIZADOS}})
-    }
-    client.close()
-
-    rol_encontrado = next((nombre_por_id[rid] for rid in role_ids if rid in nombre_por_id), None)
-    if rol_encontrado is None:
-        return None
-    return {"name": user.get("name", "Usuario"), "email": user.get("email", ""), "rol": rol_encontrado}
-
-
-def google_login_url() -> str:
-    """URL para iniciar el login con Google — reutiliza el OAuth de barber
-    (SocialAuthController::redirect) con ?target=spark, que hace que
-    barber regrese aqui en vez de a frontend-urban. No requiere una
-    redirect_uri nueva en Google Cloud Console: la URL de callback
-    registrada en Google no cambia, solo el destino final despues de que
-    barber emite el token.
-
-    Usa BARBER_PUBLIC_URL, NO BARBER_API_URL: este link lo abre el
-    NAVEGADOR del usuario, no el proceso de Python. Dentro de Docker,
-    BARBER_API_URL suele ser un nombre de servicio interno (ej. "http://web",
-    solo resoluble entre contenedores) que un navegador en el host no puede
-    resolver — por eso son dos variables separadas."""
-    env_path = Path(__file__).resolve().parent.parent / ".env"
-    load_dotenv(dotenv_path=env_path)
-    base = os.getenv("BARBER_PUBLIC_URL") or os.getenv("BARBER_API_URL", "http://localhost:8000")
-    return f"{base.rstrip('/')}/api/v1/auth/google/redirect?target=spark"
-
-
-def verificar_google_token(token: str):
-    """Verifica un token emitido por barber tras un login con Google exitoso,
-    llamando a GET /api/v1/auth/me (la propia API de barber, no Mongo
-    directo) — barber es la fuente de verdad de la identidad y el rol.
-    Devuelve {"name", "email", "rol"} si el rol esta en ROLES_AUTORIZADOS,
-    o None si el token es invalido o el rol no esta autorizado."""
-    import requests
-
-    env_path = Path(__file__).resolve().parent.parent / ".env"
-    load_dotenv(dotenv_path=env_path)
-    base = os.getenv("BARBER_API_URL", "http://localhost:8000").rstrip("/")
-
-    try:
-        resp = requests.get(
-            f"{base}/api/v1/auth/me",
-            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
-            timeout=8,
-        )
-    except requests.RequestException:
-        return None
-    if resp.status_code != 200:
-        return None
-
-    user = resp.json().get("user", {})
-    roles = user.get("roles") or []
-    rol_encontrado = next((r for r in roles if r in ROLES_AUTORIZADOS), None)
-    if rol_encontrado is None:
-        return None
-    return {"name": user.get("name", "Usuario"), "email": user.get("email", ""), "rol": rol_encontrado}
+# Acceso al dashboard: vive en config/barber_auth.py y se reexporta aqui para no
+# cambiar los imports de main_dashboard.py. Desde el 2026-10-02 el login con correo
+# pregunta a la API de barber (POST /api/v1/auth/login) en vez de leer los hashes
+# de barber_db.users: respeta el limite de intentos y las reglas de barber.
+from config.barber_auth import (  # noqa: E402,F401
+    ROLES_AUTORIZADOS, ApiNoDisponible, LoginBloqueado,
+    autenticar_usuario, google_login_url, verificar_google_token,
+)
 
 
 def _build_spark():

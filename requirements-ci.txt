@@ -8,9 +8,13 @@
 #   tests/test_analytics_publication_integration.py -> pymongo (se salta solo si
 #                                                      faltan ANALYTICS_E2E_URI/DB)
 #   tests/test_guarda_solo_lectura.py              -> solo stdlib (ast, pathlib)
+#   tests/test_barber_auth.py                      -> requests y python-dotenv (la
+#                                                      API de barber se simula)
 #
 # La suite valida la logica de publicacion y la guarda de solo lectura; NO valida
 # el runtime de Spark. Eso se prueba en el entorno spark_env (WSL + Miniconda).
 
 pymongo==4.7.2
+python-dotenv==1.2.2
+requests==2.31.0
 pytest>=8.0,<9
