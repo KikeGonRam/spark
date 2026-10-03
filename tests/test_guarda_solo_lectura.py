@@ -86,6 +86,27 @@ def _es_nombre_mongo(nombre):
     return any(fragmento in minuscula for fragmento in ("coleccion", "collection", "coll"))
 
 
+def _variables_de_entorno(codigo):
+    """Nombres de variable leídos con os.getenv("...") en un fragmento de código."""
+    arbol = ast.parse(codigo)
+    nombres = set()
+    for nodo in ast.walk(arbol):
+        if not isinstance(nodo, ast.Call):
+            continue
+        funcion = nodo.func
+        es_getenv = (
+            isinstance(funcion, ast.Attribute)
+            and funcion.attr == "getenv"
+            and isinstance(funcion.value, ast.Name)
+            and funcion.value.id == "os"
+        )
+        if es_getenv and nodo.args:
+            primer_argumento = nodo.args[0]
+            if isinstance(primer_argumento, ast.Constant) and isinstance(primer_argumento.value, str):
+                nombres.add(primer_argumento.value)
+    return nombres
+
+
 def _es_receptor_mongo(nodo):
     """¿El receptor de la llamada parece un handle de MongoDB?"""
     return any(
@@ -260,6 +281,41 @@ class GuardaSoloLecturaTest(unittest.TestCase):
             cadenas,
             "El generador no debe poder apuntar a la colección real de la app.",
         )
+
+    def test_el_generador_escribe_con_las_credenciales_de_analytics(self):
+        """El generador no puede usar las credenciales del core.
+
+        Verificado contra Atlas el 2026-10-02: el usuario de MONGO_USER tiene rol
+        `read` sobre barber_db y NINGUNA acción de escritura. Un script que
+        escriba con esas credenciales no funciona (el servidor lo rechaza), y
+        encima es la vía por la que un generador de datos de prueba podría
+        intentar tocar la base real. Debe usar la conexión de ANALYTICS.
+        """
+        ruta = RAIZ / "data_ingestion/generar_datos_urbanblade.py"
+        usadas = _variables_de_entorno(ruta.read_text(encoding="utf-8"))
+
+        for requerida in (
+            "ANALYTICS_MONGO_USER",
+            "ANALYTICS_MONGO_PASSWORD",
+            "ANALYTICS_MONGO_CLUSTER",
+            "ANALYTICS_MONGO_DB",
+        ):
+            self.assertIn(
+                requerida,
+                usadas,
+                f"El generador debe leer {requerida} para escribir en la base de "
+                "derivados, no en la del core.",
+            )
+
+        # MONGO_DB solo puede aparecer para compararlo y negarse a escribir ahí.
+        for prohibida in ("MONGO_USER", "MONGO_PASSWORD", "MONGO_CLUSTER"):
+            self.assertNotIn(
+                prohibida,
+                usadas,
+                f"El generador no debe usar {prohibida}: son las credenciales de "
+                "lectura del core.",
+            )
+        self.assertIn("MONGO_DB", usadas)
 
 
 class DetectorTest(unittest.TestCase):
