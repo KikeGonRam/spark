@@ -2,6 +2,9 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .env
+# Respaldos de .env (contienen la contrasena anterior): nunca versionar.
+.env.bak*
+.env.*.bak
 *.log
 modelo_pipeline_rf_urbanblade/
 .DS_Store
