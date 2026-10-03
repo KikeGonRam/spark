@@ -8,7 +8,7 @@ deliverables organized per unit, following the professor's exact patterns
 (e.g. `get_spark_session()`).
 
 This folder is one of several independent repos gathered under the `UrbanBlade/`
-parent folder (see `../CLONAR_PROYECTOS.md`). It is a standalone Python module
+parent folder (see `../_docs/CLONAR_PROYECTOS.md`). It is a standalone Python module
 that reads from the same MongoDB Atlas database (`barber_db`) used by the
 Laravel app in `../barber/`, but does not depend on it.
 
