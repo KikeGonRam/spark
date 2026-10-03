@@ -29,12 +29,13 @@ from config.mongo_spark_conexion_sinnulos import (
     get_referidos_df, get_rifas_df, get_waitlist_df,
     get_comisiones_df, get_resenas_df,
     autenticar_usuario, google_login_url, verificar_google_token,
+    LoginBloqueado, ApiNoDisponible,
     get_cohortes_df, get_clv_df, get_forecast_df, get_anomalias_df,
 )
 
 # Nombre de presentación por rol real de `barber` — solo para lo que se
 # muestra en spark, sin renombrar el rol "ingeniero" en la base de datos
-# (eso implica tocar barber + frontend-urban, ver autenticar_usuario()).
+# (eso implica tocar barber + frontend-urban, ver ROLES_AUTORIZADOS en config/barber_auth.py).
 _NOMBRE_ROL = {"administrador": "Administrador", "ingeniero": "Analista"}
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -142,13 +143,22 @@ if st.session_state.auth_user is None:
             password = st.text_input("Contraseña", type="password")
             enviado = st.form_submit_button("Entrar", use_container_width=True)
         if enviado:
-            with st.spinner("Verificando credenciales…"):
-                usuario = autenticar_usuario(email, password)
-            if usuario is None:
-                st.error("Correo, contraseña o rol no autorizado.")
+            # La contraseña la valida barber (POST /api/v1/auth/login), no spark:
+            # mismo límite de intentos y mismas reglas que la web y la app.
+            usuario = None
+            try:
+                with st.spinner("Verificando credenciales…"):
+                    usuario = autenticar_usuario(email, password)
+            except LoginBloqueado:
+                st.error("Demasiados intentos con este correo. Espera un minuto y vuelve a intentarlo.")
+            except ApiNoDisponible:
+                st.error("No se pudo contactar al servidor de UrbanBlade. Intenta de nuevo en unos minutos.")
             else:
-                st.session_state.auth_user = usuario
-                st.rerun()
+                if usuario is None:
+                    st.error("Correo, contraseña o rol no autorizado.")
+                else:
+                    st.session_state.auth_user = usuario
+                    st.rerun()
     st.stop()
 
 # ─────────────────────────────────────────────────────────────────────────────
