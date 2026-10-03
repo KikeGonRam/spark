@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  tests:
+    name: Pruebas y guarda de solo lectura
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias de CI
+        # Solo lo que las pruebas importan de verdad (ver requirements-ci.txt).
+        # El requirements.txt completo trae torch/tensorflow/pyspark y no hace
+        # falta para esta suite.
+        run: pip install -r requirements-ci.txt
+
+      - name: Sintaxis de todos los scripts
+        # Las unidades 1-5 no estan cubiertas por pruebas y no se pueden importar
+        # en CI (necesitan pyspark y Java). compileall al menos detecta errores de
+        # sintaxis en los 40+ scripts.
+        run: python -m compileall -q config data_ingestion unidades tests
+
+      - name: Pruebas
+        # Incluye tests/test_guarda_solo_lectura.py, que falla si algun script
+        # escribe en una coleccion de barber_db fuera de analytics_insights,
+        # appointments_synthetic o una base *_e2e.
+        run: python -m pytest tests/ -v
+
+      - name: Ningun archivo con credenciales versionado
+        # barber_db se comparte con la app Laravel: un .env o una llave filtrada
+        # aqui expone la base completa. Este paso es barato y ya habria avisado.
+        run: |
+          if git ls-files | grep -Ei '(^|/)\.env($|\.)|\.pem$|\.p12$|\.jks$|\.keystore$|adminsdk|accessKeys|credentials.*\.json$|service.?account' \
+             | grep -Ev '\.(example|testing|development\.example)$'; then
+            echo "::error::Hay archivos con credenciales versionados en este repositorio."
+            exit 1
+          fi
+          echo "Sin archivos con credenciales versionados."
