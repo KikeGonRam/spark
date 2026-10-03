@@ -5,6 +5,11 @@ description: Prepara mensajes de commit en español para que el usuario humano l
 
 # Entrega Git con propiedad humana
 
+## Rama única
+
+`barber`, `frontend-urban` y `spark` trabajan únicamente en `main`. No crear ramas de
+funcionalidad ni continuar trabajo en la antigua `urbanblade-analytics` de Spark.
+
 Ningún agente o proveedor de IA ejecuta `git commit`, `git push`, merge, rebase,
 publicación de PR ni reescritura de historial en `barber`, `frontend-urban` o `spark`.
 No se pide permiso para hacerlo: la ejecución queda reservada al usuario humano.

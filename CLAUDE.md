@@ -12,7 +12,9 @@ parent folder (see `../CLONAR_PROYECTOS.md`). It is a standalone Python module
 that reads from the same MongoDB Atlas database (`barber_db`) used by the
 Laravel app in `../barber/`, but does not depend on it.
 
-Repo: `https://github.com/KikeGonRam/spark.git`, working branch `urbanblade-analytics`.
+Repo: `https://github.com/KikeGonRam/spark.git`. The only working branch is `main`.
+`urbanblade-analytics` is a former branch whose committed history must be migrated to
+`main`; do not continue new work or create commits on that old branch.
 
 ## Stack
 

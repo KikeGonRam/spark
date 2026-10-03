@@ -1,0 +1,16 @@
+# Dependencias minimas para correr la suite de pruebas en CI.
+#
+# NO usar requirements.txt completo aqui: arrastra torch, tensorflow, xgboost y
+# pyspark (varios GB y requieren Java), y ninguna prueba los importa. Mismo
+# criterio que requirements-dashboard.txt.
+#
+#   tests/test_analytics_publication.py            -> solo stdlib (datetime)
+#   tests/test_analytics_publication_integration.py -> pymongo (se salta solo si
+#                                                      faltan ANALYTICS_E2E_URI/DB)
+#   tests/test_guarda_solo_lectura.py              -> solo stdlib (ast, pathlib)
+#
+# La suite valida la logica de publicacion y la guarda de solo lectura; NO valida
+# el runtime de Spark. Eso se prueba en el entorno spark_env (WSL + Miniconda).
+
+pymongo==4.7.2
+pytest>=8.0,<9
