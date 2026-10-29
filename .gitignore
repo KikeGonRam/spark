@@ -2,6 +2,8 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .env
+.env.*
+!.env.example
 # Respaldos de .env (contienen la contrasena anterior): nunca versionar.
 .env.bak*
 .env.*.bak
@@ -15,3 +17,14 @@ derby.log
 
 # Salidas ETL generadas (no versionar)
 data/
+
+# Entornos y reportes locales
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/

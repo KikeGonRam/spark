@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pymongo import MongoClient
 
 from config.analytics_publication import publish_insights_atomically
+from config.settings import validate_local_test_target
 
 
 class AnalyticsPublicationIntegrationTest(unittest.TestCase):
@@ -15,6 +16,7 @@ class AnalyticsPublicationIntegrationTest(unittest.TestCase):
             self.skipTest("ANALYTICS_E2E_URI y ANALYTICS_E2E_DB no configuradas")
         if not database.endswith("_e2e"):
             self.fail("La base temporal debe terminar en _e2e")
+        validate_local_test_target(uri, database)
 
         client = MongoClient(uri, serverSelectionTimeoutMS=5000)
         database_created = False

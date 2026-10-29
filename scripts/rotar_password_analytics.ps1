@@ -178,6 +178,6 @@ Write-Output "Linea reemplazada: ${clave}=<oculta>"
 Write-Output ''
 Write-Output 'Siguientes pasos:'
 Write-Output '  1. Verificar:  python scripts/verificar_credencial_analytics.py'
-Write-Output '  2. Probar el exportador:  spark-submit unidades/unidad_5_visualizacion/exportar_insights_dashboard.py'
+Write-Output '  2. Probar el exportador:  spark-submit pipelines/publicar_insights.py'
 Write-Output '  3. Avisar a quien tenga otra copia del .env: su ANALYTICS_MONGO_PASSWORD quedo obsoleta.'
 Write-Output '     (barber NO se ve afectado: usa su propio usuario laravel_analytics_reader.)'

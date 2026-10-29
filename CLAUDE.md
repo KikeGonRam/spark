@@ -1,80 +1,42 @@
-# UrbanBlade Spark — Data mining coursework
+# UrbanBlade Analytics · instrucciones de mantenimiento
 
-School project for "Extracción del conocimiento en bases de datos" (UTVT, IDGS-93,
-Prof. Héctor Velázquez Estrada, May–Aug 2026). Applies the course's 5 units of
-data analysis to real UrbanBlade barbershop data (`barber_db`: 12,535 appointments,
-1,000 clients, 25 barbers, 20 services). Not production software — academic
-deliverables organized per unit, following the professor's exact patterns
-(e.g. `get_spark_session()`).
+Este repositorio es un producto de analítica de UrbanBlade. No está organizado por
+unidades académicas y no necesita tareas del cuatrimestre para atender una petición
+explícita del propietario. Leer README.md, docs/arquitectura.md y SECURITY.md.
 
-This folder is one of several independent repos gathered under the `UrbanBlade/`
-parent folder (see `../_docs/CLONAR_PROYECTOS.md`). It is a standalone Python module
-that reads from the same MongoDB Atlas database (`barber_db`) used by the
-Laravel app in `../barber/`, but does not depend on it.
+## Estructura
 
-Repo: `https://github.com/KikeGonRam/spark.git`. The only working branch is `main`.
-`urbanblade-analytics` is a former branch whose committed history must be migrated to
-`main`; do not continue new work or create commits on that old branch.
+- config/: datos, configuración, autenticación y publicación atómica.
+- analytics/preparation/: preparación, calidad y ETL.
+- analytics/supervised/ y analytics/unsupervised/: modelos y patrones.
+- dashboard/app.py y dashboard/views/: interfaz Streamlit.
+- pipelines/publicar_insights.py: derivados consumidos por Barber.
+- data_ingestion/: datos sintéticos con escritura explícita y separada del core.
+- tests/: contratos, guardas, integración local y runtime sintético.
 
-## Stack
+## Límites de datos
 
-- Python 3.11 (Miniconda env `spark_env`), run inside WSL Ubuntu 24.04
-- PySpark 3.5.1, MongoDB via pymongo 4.7.2, python-dotenv
-- pandas, numpy, scipy, scikit-learn, statsmodels
-- ML: PyTorch 2.3.0, TensorFlow 2.16.1, XGBoost, LightGBM
-- Visualization: matplotlib, seaborn, plotly; dashboards via Streamlit
+El core se lee con credenciales de solo lectura; no es un destino de publicación.
+Solo se escriben analytics_insights y appointments_synthetic en la base de derivados,
+con credenciales distintas y habilitación explícita. No ejecutar esas operaciones
+contra Atlas por el solo hecho de editar el repositorio.
 
-## Structure
+La existencia de un .env no autoriza copiarlo, imprimirlo o versionarlo. Se puede usar
+URBANBLADE_ENV_FILE para apuntar al archivo privado existente, sin duplicarlo.
+No escribir PII en artefactos de CI. El diagnóstico muestra solo flags y tipos de error.
 
-```
-config/                 shared data-access layer
-  mongo_spark_conexion_sinnulos.py   connection + JOIN + features (use this one)
-  mongo_spark_conexion.py            legacy base connection
-data_ingestion/          synthetic/seed data generation
-data/etl_output/          ETL output (Parquet/CSV), gitignored
-unidades/                 one folder per course unit, each with its own README
-  unidad_1_introduccion    intro / comparative docs
-  unidad_2_preparacion     ETL, data warehouse, cleaning (7 scripts)
-  unidad_3_supervisado     regression, classification (6 scripts)
-  unidad_4_no_supervisado  KMeans, PCA, FP-Growth (4 scripts)
-  unidad_5_visualizacion   executive dashboard, Matplotlib
-  unidad_6_caso_aplicado_laravel
-```
+No ejecutar migraciones, seeders, resets, rotaciones de credenciales o cambios de IAM
+para una tarea de Spark. Conservar los postmortems en docs/postmortems como antecedentes,
+no como operaciones para repetir. Los roles remotos se verifican, no se deducen del código.
 
-Scripts locate the project root automatically (they search for `config/`), so
-they can be run from any working directory.
+## Calidad y entrega
 
-## Run / setup
+Python 3.12, Java 17 y Spark 3.5.x. El dashboard no instala torch/tensorflow.
+Usar requirements-ci.txt para pruebas rápidas y requirements-dashboard.txt para runtime.
+Validar sintaxis, pruebas, guardas, dependencias y runtime con datos sintéticos.
+La publicación remota y el despliegue son evidencias distintas de la validación local.
 
-```powershell
-.\setup-spark.ps1     # validates WSL2, Java, Miniconda, spark_env
-cp .env.example .env   # fill MONGO_USER, MONGO_PASSWORD, MONGO_CLUSTER, MONGO_DB
-```
-Dependencies: `pip install -r requirements.txt` inside the `spark_env` conda env.
-Dashboards: `streamlit run <script>` from the relevant `unidad_5_visualizacion` script.
-
-See `unidades/README.md` for the per-unit deliverable checklist and
-`unidades/COMANDOS.txt` for exact commands.
-
-## Conventions
-
-- Never commit `.env` (MongoDB Atlas credentials) — use `.env.example` as template.
-- All new data-access code should go through `config/mongo_spark_conexion_sinnulos.py`,
-  not the legacy connector.
-- Ningún proveedor de IA ejecuta `git commit`, `git push`, merge, rebase ni publica PR.
-  La IA valida y entrega un mensaje de commit en español; el usuario realiza Git.
-
-## Guardrails (read before writing to MongoDB or touching Laravel-side flows)
-
-- **`barber_db` on Atlas is shared with `../barber/` (production-style Laravel app).**
-  This project should only ever write to the `analytics_insights` collection (via
-  `unidades/unidad_5_visualizacion/exportar_insights_dashboard.py`). Every other script
-  reads `appointments`, `payments`, `customers`, `barbers`, `services` — never writes to
-  them. Confirm before adding any `.write()`/`insert_many()`/`update_many()`/
-  `delete_many()` targeting anything else.
-- **This has already gone wrong once.** See
-  `unidades/unidad_6_caso_aplicado_laravel/01_diagnostico_incidente.md`: a Laravel/Docker
-  "reset" wiped real users/barbers/clients in this same Atlas database with no
-  recoverable backup. Never suggest or chain a `php artisan migrate:fresh`, `db:seed`, or
-  "reset the database" step as part of a `spark/` task.
-- Full detail: see `.claude/skills/urbanblade-guardrails/SKILL.md` in this repo.
+Preservar trabajo ajeno. Rama por cambio desde main revisada; commit/push/PR solo
+con orden del propietario para este cambio. Mensajes en español, sin atribuciones
+de herramientas, force push ni eliminación de ramas. Spark no se despliega automáticamente.
+Las skills de proveedores deben respetar estos límites y la petición vigente del usuario.
