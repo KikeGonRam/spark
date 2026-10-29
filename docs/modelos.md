@@ -44,3 +44,14 @@ el dashboard no los necesita para arrancar.
 Referencias históricas: [supervisados](reference/supervised) y
 [no supervisados](reference/unsupervised). Revisar [operación](operacion.md) antes
 de exportar resultados o usar un artefacto persistido.
+
+## Contratos de indicadores
+
+Las pruebas sintéticas verifican clientes únicos por cohorte, exclusión de ingresos
+de citas canceladas y ausencia de proyección cuando falta historial. Una tendencia
+decreciente no puede producir ingresos o citas negativos: estimación y límites se
+recortan a cero, manteniendo mínimo <= estimación <= máximo.
+
+La banda de la tendencia lineal es una heurística basada en residuos históricos;
+no representa una cobertura predictiva del 95 % demostrada ni incorpora todas las
+fuentes de incertidumbre. No usarla como compromiso de ingresos o demanda futura.

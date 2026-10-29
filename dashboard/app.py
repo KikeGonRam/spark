@@ -53,6 +53,13 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+TRANSPARENT = 'rgba(0,0,0,0)'
+INFO_ICON = ':material/info:'
+LINE_MARKERS = 'lines+markers'
+RETENTION_LABEL = 'Retención y CLV'
+EXECUTIVE_SUMMARY_LABEL = 'Resumen Ejecutivo'
+WAITLIST_LABEL = 'Lista de Espera'
+
 GOLD   = "#d4af37"
 DARK   = "#0e0e0e"
 CARD   = "#1a1a1a"
@@ -839,7 +846,7 @@ def _sparkline(serie: pd.Series, color: str):
     fig.update_traces(fillcolor=f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.15)")
     fig.update_layout(
         height=45, margin=dict(l=0, r=0, t=0, b=0),
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
         xaxis=dict(visible=False), yaxis=dict(visible=False), showlegend=False,
     )
     return fig
@@ -934,10 +941,10 @@ st.divider()
 # El selector mantiene la navegación legible con muchos análisis disponibles.
 # 'Resumen Ejecutivo' se incluye en todos los grupos como ancla.
 _TAB_GROUPS = {
-    "Todo el panel": ['Resumen Ejecutivo', 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario', 'Tienda y Pedidos', 'Publicaciones', 'Gift Cards y Paquetes', 'Membresias', 'Referidos y Rifas', 'Lista de Espera', 'Comisiones y Reseñas', 'Retención y CLV', 'Regresion', 'Arbol de Decision', 'Random Forest', 'Churn / Abandono', 'Demanda', 'KMeans', 'PCA', 'Segmentacion Clientes', 'Recomendacion'],
-    "Operación y Datos": ['Resumen Ejecutivo', 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario', 'Tienda y Pedidos', 'Publicaciones', 'Gift Cards y Paquetes', 'Membresias', 'Referidos y Rifas', 'Lista de Espera', 'Comisiones y Reseñas', 'Retención y CLV'],
-    "Modelos Predictivos": ['Resumen Ejecutivo', 'Regresion', 'Arbol de Decision', 'Random Forest', 'Churn / Abandono', 'Demanda'],
-    "Segmentación y Patrones": ['Resumen Ejecutivo', 'KMeans', 'PCA', 'Segmentacion Clientes', 'Recomendacion', 'Retención y CLV'],
+    "Todo el panel": [EXECUTIVE_SUMMARY_LABEL, 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario', 'Tienda y Pedidos', 'Publicaciones', 'Gift Cards y Paquetes', 'Membresias', 'Referidos y Rifas', WAITLIST_LABEL, 'Comisiones y Reseñas', RETENTION_LABEL, 'Regresion', 'Arbol de Decision', 'Random Forest', 'Churn / Abandono', 'Demanda', 'KMeans', 'PCA', 'Segmentacion Clientes', 'Recomendacion'],
+    "Operación y Datos": [EXECUTIVE_SUMMARY_LABEL, 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario', 'Tienda y Pedidos', 'Publicaciones', 'Gift Cards y Paquetes', 'Membresias', 'Referidos y Rifas', WAITLIST_LABEL, 'Comisiones y Reseñas', RETENTION_LABEL],
+    "Modelos Predictivos": [EXECUTIVE_SUMMARY_LABEL, 'Regresion', 'Arbol de Decision', 'Random Forest', 'Churn / Abandono', 'Demanda'],
+    "Segmentación y Patrones": [EXECUTIVE_SUMMARY_LABEL, 'KMeans', 'PCA', 'Segmentacion Clientes', 'Recomendacion', RETENTION_LABEL],
 }
 _visible = _TAB_GROUPS[vista_sel]
 tabs = st.tabs(_visible)
@@ -945,8 +952,8 @@ tabs = st.tabs(_visible)
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — RESUMEN GENERAL
 # ══════════════════════════════════════════════════════════════════════════════
-if "Resumen Ejecutivo" in _visible:
-    with tabs[_visible.index("Resumen Ejecutivo")]:
+if EXECUTIVE_SUMMARY_LABEL in _visible:
+    with tabs[_visible.index(EXECUTIVE_SUMMARY_LABEL)]:
         st.subheader("Resumen Ejecutivo del Negocio")
 
         _anomalias = analizar_anomalias(pdf)
@@ -981,7 +988,7 @@ if "Resumen Ejecutivo" in _visible:
             fig = px.bar(estados, x="count", y="estado", orientation="h",
                          title="Distribución de Estados de Citas",
                          color="count", color_continuous_scale=[[0, "#444"], [1, GOLD]])
-            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            fig.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                               font_color="white", legend_font_color="white",
                               coloraxis_showscale=False, yaxis_title="", xaxis_title="Citas")
             st.plotly_chart(fig, use_container_width=True)
@@ -992,7 +999,7 @@ if "Resumen Ejecutivo" in _visible:
             fig2 = px.bar(top_barberos, x="citas", y="barbero", orientation="h",
                           title="Top 10 Barberos por Número de Citas",
                           color="citas", color_continuous_scale=[[0, "#444"], [1, GOLD]])
-            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            fig2.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                font_color="white", yaxis=dict(autorange="reversed"),
                                coloraxis_showscale=False)
             st.plotly_chart(fig2, use_container_width=True)
@@ -1006,7 +1013,7 @@ if "Resumen Ejecutivo" in _visible:
                           title="Ingreso Total por Tipo de Servicio",
                           color="ingreso", color_continuous_scale=[[0, "#444"], [1, GOLD]],
                           labels={"ingreso": "Ingreso ($MXN)", "servicio": "Servicio"})
-            fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            fig3.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                font_color="white", coloraxis_showscale=False, xaxis_tickangle=-30)
             st.plotly_chart(fig3, use_container_width=True)
 
@@ -1019,7 +1026,7 @@ if "Resumen Ejecutivo" in _visible:
             if hay_citas:
                 fig4.add_vline(x=pdf["precio"].mean(), line_dash="dash", line_color=RED,
                                annotation_text=f"Media: ${pdf['precio'].mean():.0f}", annotation_font_color="white")
-            fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+            fig4.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT, font_color="white")
             st.plotly_chart(fig4, use_container_width=True)
 
         st.divider()
@@ -1064,7 +1071,7 @@ if "MapReduce / ETL" in _visible:
                          title="REDUCE → Ingreso Total por Servicio",
                          color="ingreso_total", color_continuous_scale=[[0, "#333"], [1, GOLD]],
                          labels={"ingreso_total": "Ingreso Total ($MXN)", "servicio": ""})
-            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            fig.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                               font_color="white", coloraxis_showscale=False, xaxis_tickangle=-30)
             st.plotly_chart(fig, use_container_width=True)
 
@@ -1073,7 +1080,7 @@ if "MapReduce / ETL" in _visible:
                           title="REDUCE → Número de Citas por Servicio",
                           color="citas", color_continuous_scale=[[0, "#333"], [1, BLUE]],
                           labels={"citas": "Número de Citas", "servicio": ""})
-            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            fig2.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                font_color="white", coloraxis_showscale=False, xaxis_tickangle=-30)
             st.plotly_chart(fig2, use_container_width=True)
 
@@ -1084,7 +1091,7 @@ if "MapReduce / ETL" in _visible:
                               text="servicio", title="Citas vs Ingreso Total (tamaño = precio promedio)",
                               color="ingreso_total", color_continuous_scale=[[0, "#333"], [1, GOLD]])
             fig3.update_traces(textposition="top center", textfont_color="white")
-            fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            fig3.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                font_color="white", coloraxis_showscale=False)
             st.plotly_chart(fig3, use_container_width=True)
 
@@ -1094,7 +1101,7 @@ if "MapReduce / ETL" in _visible:
             fig4 = px.bar(por_barbero, x="ingreso", y="barbero", orientation="h",
                           title="Ingreso Total por Barbero (Top 12)",
                           color="ingreso", color_continuous_scale=[[0, "#333"], [1, PURPLE]])
-            fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            fig4.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                font_color="white", yaxis=dict(autorange="reversed"), coloraxis_showscale=False)
             st.plotly_chart(fig4, use_container_width=True)
 
@@ -1146,14 +1153,14 @@ if "Pagos y Calidad" in _visible:
                 fig = px.pie(metodos, values="pagos", names="metodo", hole=0.45,
                              title="Distribución por método de pago",
                              color_discrete_sequence=px.colors.qualitative.Set2)
-                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                fig.update_layout(paper_bgcolor=TRANSPARENT, font_color="white")
                 st.plotly_chart(fig, use_container_width=True)
             with col_b:
                 top_svc = pagos_verificados.groupby("servicio")["monto"].sum().reset_index().sort_values("monto", ascending=False).head(10)
                 fig2 = px.bar(top_svc, x="monto", y="servicio", orientation="h",
                               title="Monto cobrado por servicio (top 10, solo pagos verificados)",
                               color="monto", color_continuous_scale=[[0, "#333"], [1, GOLD]])
-                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                fig2.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                    font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
                 st.plotly_chart(fig2, use_container_width=True)
 
@@ -1163,7 +1170,7 @@ if "Pagos y Calidad" in _visible:
                     f"{n_no_verificados:,} de los {len(pagos_pdf):,} pagos registrados "
                     f"({n_no_verificados / len(pagos_pdf):.1%}) están rechazados o pendientes de "
                     f"verificar y no se cuentan en las métricas de dinero de arriba.",
-                    icon=":material/info:")
+                    icon=INFO_ICON)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 4 — FIDELIZACIÓN
@@ -1189,14 +1196,14 @@ if "Fidelizacion" in _visible:
                 fig = px.bar(resumen_nivel, x="nivel", y="puntos",
                              title="Puntos promedio por nivel de cliente",
                              color="nivel", color_discrete_sequence=[BLUE, GOLD])
-                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                fig.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT, font_color="white")
                 st.plotly_chart(fig, use_container_width=True)
             with col_b:
                 top_clientes = por_nivel.sort_values("puntos", ascending=False).head(10)
                 fig2 = px.bar(top_clientes, x="puntos", y="cliente", orientation="h",
                               title="Top 10 clientes por puntos acumulados",
                               color="puntos", color_continuous_scale=[[0, "#333"], [1, GOLD]])
-                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                fig2.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                    font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
                 st.plotly_chart(fig2, use_container_width=True)
 
@@ -1204,12 +1211,12 @@ if "Fidelizacion" in _visible:
             tendencia["periodo"] = tendencia["anio"].astype(str) + "-" + tendencia["mes"].astype(str).str.zfill(2)
             fig3 = px.line(tendencia.sort_values("periodo"), x="periodo", y="puntos", markers=True,
                            title="Tendencia mensual de puntos otorgados")
-            fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+            fig3.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT, font_color="white")
             st.plotly_chart(fig3, use_container_width=True)
 
             st.info("Todas las transacciones son de tipo `ganado` — aún no hay canjes registrados. "
                     "Oportunidad: activar la redención de puntos por servicios/productos.",
-                    icon=":material/info:")
+                    icon=INFO_ICON)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 5 — UTILIZACIÓN DE BARBEROS
@@ -1237,7 +1244,7 @@ if "Utilizacion Barberos" in _visible:
                              title="Utilización promedio por barbero",
                              color="utilizacion_prom", color_continuous_scale=[[0, BLUE], [0.5, GOLD], [1, RED]])
                 fig.add_vline(x=80, line_dash="dash", line_color=RED, annotation_text="Sobrecarga")
-                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                fig.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                   font_color="white", coloraxis_showscale=False,
                                   yaxis=dict(autorange="reversed"), height=600)
                 st.plotly_chart(fig, use_container_width=True)
@@ -1249,12 +1256,12 @@ if "Utilizacion Barberos" in _visible:
                 fig2 = px.imshow(heat, text_auto=".0f", color_continuous_scale=[[0, DARK], [1, GOLD]],
                                  title="Mapa de calor: utilización por barbero y día",
                                  labels=dict(color="Utilización %"))
-                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white", height=600)
+                fig2.update_layout(paper_bgcolor=TRANSPARENT, font_color="white", height=600)
                 st.plotly_chart(fig2, use_container_width=True)
 
             st.info(f"Equipo con utilización promedio de {ranking['utilizacion_prom'].mean():.1f}%. "
                     f"Redistribuir citas de barberos/días saturados hacia los de baja utilización "
-                    f"optimiza la agenda sin contratar personal adicional.", icon=":material/info:")
+                    f"optimiza la agenda sin contratar personal adicional.", icon=INFO_ICON)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 6 — INVENTARIO
@@ -1285,7 +1292,7 @@ if "Inventario" in _visible:
                 fig = px.bar(cat, x="productos", y="categoria", orientation="h",
                              title="Productos por categoría",
                              color="productos", color_continuous_scale=[[0, "#333"], [1, PURPLE]])
-                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                fig.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                   font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
                 st.plotly_chart(fig, use_container_width=True)
             with col_b:
@@ -1293,7 +1300,7 @@ if "Inventario" in _visible:
                               x="margen_pct", y="producto", orientation="h",
                               title="Top 10 productos por margen (%)",
                               color="margen_pct", color_continuous_scale=[[0, "#333"], [1, GREEN]])
-                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                fig2.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                    font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
                 st.plotly_chart(fig2, use_container_width=True)
 
@@ -1332,14 +1339,14 @@ if "Tienda y Pedidos" in _visible:
                 fig = px.bar(dist, x="tipo", y="pedidos", color="estado",
                              title="Distribución de pedidos por tipo y estado",
                              barmode="stack", color_discrete_sequence=px.colors.qualitative.Set2)
-                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                fig.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT, font_color="white")
                 st.plotly_chart(fig, use_container_width=True)
             with col_b:
                 ing_tipo = entregados.groupby("tipo")["total"].sum().reset_index()
                 fig2 = px.pie(ing_tipo, values="total", names="tipo", hole=0.45,
                               title="Ingreso entregado por tipo (cita vs tienda)",
                               color_discrete_sequence=[GOLD, BLUE])
-                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                fig2.update_layout(paper_bgcolor=TRANSPARENT, font_color="white")
                 st.plotly_chart(fig2, use_container_width=True)
 
             if top_pdf is not None and len(top_pdf):
@@ -1349,7 +1356,7 @@ if "Tienda y Pedidos" in _visible:
                 fig3 = px.bar(resumen_top, x="unidades", y="producto", orientation="h",
                               title="Top 10 productos más vendidos (unidades, pedidos entregados)",
                               color="unidades", color_continuous_scale=[[0, "#333"], [1, GOLD]])
-                fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                fig3.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                    font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
                 st.plotly_chart(fig3, use_container_width=True)
 
@@ -1357,7 +1364,7 @@ if "Tienda y Pedidos" in _visible:
             pct_addon = round(ing_tipo.set_index("tipo")["total"].get("cita", 0) / ingreso_total * 100, 1) if ingreso_total else 0
             st.info(f"Los add-ons dentro de citas ({citas_addon:,} pedidos) representan el {pct_addon}% del "
                     f"ingreso de tienda — el checkout durante la reserva convierte mejor que la tienda suelta.",
-                    icon=":material/info:")
+                    icon=INFO_ICON)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — PUBLICACIONES (MURO SOCIAL)
@@ -1381,7 +1388,7 @@ if "Publicaciones" in _visible:
             fig = px.bar(top_engagement, x="engagement_por_post", y="barbero", orientation="h",
                          title="Top 10 barberos por engagement (comentarios + reacciones / post)",
                          color="engagement_por_post", color_continuous_scale=[[0, "#333"], [1, GOLD]])
-            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            fig.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                               font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
             st.plotly_chart(fig, use_container_width=True)
 
@@ -1391,7 +1398,7 @@ if "Publicaciones" in _visible:
                               title="Engagement vs volumen de citas completadas",
                               color="engagement_por_post", color_continuous_scale=[[0, "#333"], [1, PURPLE]])
             fig2.update_traces(textposition="top center", textfont_color="white")
-            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            fig2.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                font_color="white", coloraxis_showscale=False)
             st.plotly_chart(fig2, use_container_width=True)
 
@@ -1400,7 +1407,7 @@ if "Publicaciones" in _visible:
             if correlacion is not None:
                 st.info(f"Correlación engagement vs citas completadas: {correlacion:.2f}. "
                         f"{n_sin_posts} barbero(s) sin ninguna publicación todavía.",
-                        icon=":material/info:")
+                        icon=INFO_ICON)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — GIFT CARDS, PAQUETES Y COMBOS
@@ -1414,7 +1421,7 @@ if "Gift Cards y Paquetes" in _visible:
 
         st.markdown("#### Gift Cards")
         if gc_pdf is None or gc_pdf.empty:
-            st.info("Sin gift cards vendidas todavía.", icon=":material/info:")
+            st.info("Sin gift cards vendidas todavía.", icon=INFO_ICON)
         else:
             vendido = gc_pdf["monto_inicial"].sum()
             saldo_vivo = gc_pdf[gc_pdf["estado"] == "activa"]["saldo"].sum()
@@ -1428,17 +1435,17 @@ if "Gift Cards y Paquetes" in _visible:
             with col_a:
                 fig = px.pie(gc_pdf, names="estado", title="Gift cards por estado", hole=0.45,
                              color_discrete_sequence=px.colors.qualitative.Set2)
-                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                fig.update_layout(paper_bgcolor=TRANSPARENT, font_color="white")
                 st.plotly_chart(fig, use_container_width=True)
             with col_b:
                 fig2 = px.histogram(gc_pdf, x="monto_inicial", nbins=20, title="Distribución del monto comprado",
                                     color_discrete_sequence=[GOLD])
-                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                fig2.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT, font_color="white")
                 st.plotly_chart(fig2, use_container_width=True)
 
         st.markdown("#### Paquetes prepagados")
         if pq_pdf is None or pq_pdf.empty:
-            st.info("Sin paquetes comprados todavía.", icon=":material/info:")
+            st.info("Sin paquetes comprados todavía.", icon=INFO_ICON)
         else:
             c1, c2, c3 = st.columns(3)
             c1.metric("Paquetes vendidos", len(pq_pdf))
@@ -1448,13 +1455,13 @@ if "Gift Cards y Paquetes" in _visible:
             top_paquetes = pq_pdf.groupby("paquete").size().reset_index(name="ventas").sort_values("ventas", ascending=False)
             fig3 = px.bar(top_paquetes, x="ventas", y="paquete", orientation="h", title="Paquetes más vendidos",
                           color="ventas", color_continuous_scale=[[0, "#333"], [1, BLUE]])
-            fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            fig3.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
             st.plotly_chart(fig3, use_container_width=True)
 
         st.markdown("#### Combos (catálogo)")
         if combo_pdf is None or combo_pdf.empty:
-            st.info("Sin combos configurados todavía.", icon=":material/info:")
+            st.info("Sin combos configurados todavía.", icon=INFO_ICON)
         else:
             st.dataframe(combo_pdf.rename(columns={
                 "combo": "Combo", "precio_combo": "Precio", "descuento": "Descuento",
@@ -1485,19 +1492,19 @@ if "Membresias" in _visible:
             with col_a:
                 fig = px.pie(mem_pdf, names="estado", title="Suscripciones por estado", hole=0.45,
                              color_discrete_sequence=px.colors.qualitative.Set2)
-                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                fig.update_layout(paper_bgcolor=TRANSPARENT, font_color="white")
                 st.plotly_chart(fig, use_container_width=True)
             with col_b:
                 por_plan = mem_pdf.groupby("plan").size().reset_index(name="suscriptores")
                 fig2 = px.bar(por_plan, x="plan", y="suscriptores", title="Suscriptores por plan",
                               color="suscriptores", color_continuous_scale=[[0, "#333"], [1, GOLD]])
-                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                fig2.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                    font_color="white", coloraxis_showscale=False)
                 st.plotly_chart(fig2, use_container_width=True)
 
             st.markdown("#### Cobros (facturas)")
             if inv_pdf is None or inv_pdf.empty:
-                st.info("Sin cobros de membresía registrados todavía.", icon=":material/info:")
+                st.info("Sin cobros de membresía registrados todavía.", icon=INFO_ICON)
             else:
                 st.metric("Ingreso total por membresías", f"${inv_pdf['monto'].sum():,.0f}")
                 st.dataframe(inv_pdf.rename(columns={"cliente": "Cliente", "plan": "Plan", "monto": "Monto"}),
@@ -1515,7 +1522,7 @@ if "Referidos y Rifas" in _visible:
 
         st.markdown("#### Referidos")
         if ref_pdf is None or ref_pdf.empty:
-            st.info("Sin referidos registrados todavía.", icon=":material/info:")
+            st.info("Sin referidos registrados todavía.", icon=INFO_ICON)
         else:
             completados = ref_pdf[ref_pdf["estado"] == "completado"]
             c1, c2, c3 = st.columns(3)
@@ -1527,13 +1534,13 @@ if "Referidos y Rifas" in _visible:
             fig = px.bar(top_referentes, x="referidos", y="referente", orientation="h",
                          title="Top referentes (clientes que más invitan)",
                          color="referidos", color_continuous_scale=[[0, "#333"], [1, GREEN]])
-            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            fig.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                               font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
             st.plotly_chart(fig, use_container_width=True)
 
         st.markdown("#### Rifa mensual de lealtad")
         if rifa_pdf is None or rifa_pdf.empty:
-            st.info("Sin resultados de rifa todavía.", icon=":material/info:")
+            st.info("Sin resultados de rifa todavía.", icon=INFO_ICON)
         else:
             c1, c2, c3 = st.columns(3)
             c1.metric("Premios entregados", len(rifa_pdf))
@@ -1547,9 +1554,9 @@ if "Referidos y Rifas" in _visible:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — LISTA DE ESPERA
 # ══════════════════════════════════════════════════════════════════════════════
-if "Lista de Espera" in _visible:
-    with tabs[_visible.index("Lista de Espera")]:
-        st.subheader("Lista de Espera")
+if WAITLIST_LABEL in _visible:
+    with tabs[_visible.index(WAITLIST_LABEL)]:
+        st.subheader(WAITLIST_LABEL)
         st.caption("Colección `waitlists` — clientes anotados cuando un barbero/servicio/fecha ya no tiene horarios")
 
         wl_pdf = analizar_waitlist()
@@ -1565,14 +1572,14 @@ if "Lista de Espera" in _visible:
             with col_a:
                 fig = px.pie(wl_pdf, names="estado", title="Entradas por estado", hole=0.45,
                              color_discrete_sequence=px.colors.qualitative.Set2)
-                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                fig.update_layout(paper_bgcolor=TRANSPARENT, font_color="white")
                 st.plotly_chart(fig, use_container_width=True)
             with col_b:
                 demanda = wl_pdf.groupby(["barbero", "servicio"]).size().reset_index(name="anotados").sort_values("anotados", ascending=False).head(10)
                 fig2 = px.bar(demanda, x="anotados", y="barbero", orientation="h", color="servicio",
                               title="Mayor demanda insatisfecha (barbero + servicio)",
                               color_discrete_sequence=px.colors.qualitative.Set2)
-                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                fig2.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                    font_color="white", yaxis=dict(autorange="reversed"))
                 st.plotly_chart(fig2, use_container_width=True)
 
@@ -1588,7 +1595,7 @@ if "Comisiones y Reseñas" in _visible:
 
         st.markdown("#### Comisiones")
         if com_pdf is None or com_pdf.empty:
-            st.info("Sin barberos con comisión configurada, o sin citas todavía.", icon=":material/info:")
+            st.info("Sin barberos con comisión configurada, o sin citas todavía.", icon=INFO_ICON)
         else:
             c1, c2, c3 = st.columns(3)
             c1.metric("Barberos", len(com_pdf))
@@ -1599,13 +1606,13 @@ if "Comisiones y Reseñas" in _visible:
             fig = px.bar(top_comision, x="comision_ganada", y="barbero", orientation="h",
                          title="Top 10 barberos por comisión ganada",
                          color="comision_ganada", color_continuous_scale=[[0, "#333"], [1, GOLD]])
-            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            fig.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                               font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
             st.plotly_chart(fig, use_container_width=True)
 
         st.markdown("#### Reseñas de clientes")
         if res_pdf is None or res_pdf.empty:
-            st.info("Sin reseñas registradas todavía.", icon=":material/info:")
+            st.info("Sin reseñas registradas todavía.", icon=INFO_ICON)
         else:
             c1, c2 = st.columns(2)
             c1.metric("Reseñas totales", len(res_pdf))
@@ -1614,29 +1621,29 @@ if "Comisiones y Reseñas" in _visible:
             rating_barbero = res_pdf.groupby("barbero")["rating"].mean().reset_index().sort_values("rating", ascending=False)
             fig2 = px.bar(rating_barbero, x="rating", y="barbero", orientation="h", title="Rating promedio por barbero",
                           color="rating", color_continuous_scale=[[0, "#333"], [1, GREEN]], range_x=[0, 5])
-            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            fig2.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
             st.plotly_chart(fig2, use_container_width=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — RETENCIÓN Y CLV (spark-advanced-analytics-plan, Fase 1)
 # ══════════════════════════════════════════════════════════════════════════════
-if "Retención y CLV" in _visible:
-    with tabs[_visible.index("Retención y CLV")]:
+if RETENTION_LABEL in _visible:
+    with tabs[_visible.index(RETENTION_LABEL)]:
         st.subheader("Retención de Clientes (Cohortes) y CLV Proyectado")
         st.caption("Patrón de Mixpanel/Amplitude/Shopify: ¿los clientes que llegan se quedan? "
                    "¿cuánto van a gastar en total?")
 
         if not hay_citas:
             st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
-                    "en cuanto existan datos reales.", icon=":material/info:")
+                    "en cuanto existan datos reales.", icon=INFO_ICON)
         else:
             cohortes_pdf, clv_pdf = analizar_cohortes_clv(spark, df, pdf)
 
             st.markdown("#### Retención por cohorte de llegada")
             if cohortes_pdf is None or cohortes_pdf.empty:
                 st.info("No hay suficientes meses de historia todavía para calcular cohortes.",
-                        icon=":material/info:")
+                        icon=INFO_ICON)
             else:
                 tabla_cohorte = cohortes_pdf.pivot(index="cohorte", columns="mes_desde_cohorte",
                                                     values="retencion_pct")
@@ -1648,7 +1655,7 @@ if "Retención y CLV" in _visible:
                 # Sin esto, plotly detecta las etiquetas "2026-06" como fechas
                 # y las reformatea de forma ilegible (eje Y es categorico, no temporal).
                 fig_coh.update_yaxes(type="category")
-                fig_coh.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white",
+                fig_coh.update_layout(paper_bgcolor=TRANSPARENT, font_color="white",
                                        title="% de la cohorte que volvió a agendar cada mes siguiente")
                 st.plotly_chart(fig_coh, use_container_width=True)
                 st.caption("Fila = mes en que un grupo de clientes llegó por primera vez. Columna = "
@@ -1658,7 +1665,7 @@ if "Retención y CLV" in _visible:
             st.divider()
             st.markdown("#### CLV proyectado a 12 meses")
             if clv_pdf is None or clv_pdf.empty:
-                st.info("Sin clientes suficientes para proyectar CLV todavía.", icon=":material/info:")
+                st.info("Sin clientes suficientes para proyectar CLV todavía.", icon=INFO_ICON)
             else:
                 col_k1, col_k2, col_k3 = st.columns(3)
                 col_k1.metric("CLV promedio (12m)", f"${clv_pdf['clv_proyectado_12m'].mean():,.0f}")
@@ -1674,7 +1681,7 @@ if "Retención y CLV" in _visible:
                                       title="Top 10 clientes por CLV proyectado",
                                       color="clv_proyectado_12m", color_continuous_scale=[[0, "#333"], [1, GOLD]],
                                       labels={"clv_proyectado_12m": "CLV proyectado 12m ($MXN)", "cliente": ""})
-                    fig_clv.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                    fig_clv.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                            font_color="white", coloraxis_showscale=False,
                                            yaxis=dict(autorange="reversed"))
                     st.plotly_chart(fig_clv, use_container_width=True)
@@ -1683,7 +1690,7 @@ if "Retención y CLV" in _visible:
                                              title="Distribución del CLV proyectado",
                                              color_discrete_sequence=[GOLD],
                                              labels={"clv_proyectado_12m": "CLV proyectado 12m ($MXN)"})
-                    fig_dist.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                    fig_dist.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                             font_color="white")
                     st.plotly_chart(fig_dist, use_container_width=True)
 
@@ -1709,11 +1716,11 @@ if "Regresion" in _visible:
         st.caption("Predicción de la FACTURACIÓN DIARIA (target real, sin fuga) · 6 modelos · R², MSE, MAE")
         if not hay_citas:
             st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
-                    "en cuanto existan datos reales.", icon=":material/info:")
+                    "en cuanto existan datos reales.", icon=INFO_ICON)
         else:
             st.info("Se predice el ingreso **por día** a partir del volumen de citas y el calendario. "
                     "Predecir el precio de una sola cita sería trivial (precio_cobrado==precio_servicio), "
-                    "por eso agregamos por día: ahí sí hay varianza real.", icon=":material/info:")
+                    "por eso agregamos por día: ahí sí hay varianza real.", icon=INFO_ICON)
 
             with st.spinner("Entrenando 6 modelos de regresión sobre datos reales…"):
                 tabla_reg, pdf_scatter = entrenar_regresion(spark, df)
@@ -1734,7 +1741,7 @@ if "Regresion" in _visible:
                              color="R²", color_continuous_scale=[[0, "#333"], [1, GOLD]],
                              text_auto=".4f")
                 fig.add_hline(y=0.9, line_dash="dot", line_color=GREEN, annotation_text="R²=0.9 excelente", annotation_font_color="white")
-                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                fig.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                   font_color="white", coloraxis_showscale=False, xaxis_tickangle=-20)
                 st.plotly_chart(fig, use_container_width=True)
 
@@ -1743,7 +1750,7 @@ if "Regresion" in _visible:
                 fig2.add_trace(go.Bar(name="MSE", x=tabla_reg["Modelo"], y=tabla_reg["MSE"], marker_color=RED))
                 fig2.add_trace(go.Bar(name="MAE", x=tabla_reg["Modelo"], y=tabla_reg["MAE"], marker_color=BLUE))
                 fig2.update_layout(title="MSE vs MAE por Modelo",
-                                   barmode="group", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                   barmode="group", paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                    font_color="white", xaxis_tickangle=-20)
                 st.plotly_chart(fig2, use_container_width=True)
 
@@ -1756,7 +1763,7 @@ if "Regresion" in _visible:
                                   color_discrete_sequence=[BLUE], opacity=0.5)
                 fig3.add_scatter(x=pdf_scatter["num_citas"], y=pdf_scatter["prediction"],
                                  mode="markers", name="Predicción", marker=dict(color=GOLD, symbol="x", size=6))
-                fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                fig3.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT, font_color="white")
                 st.plotly_chart(fig3, use_container_width=True)
 
             with col_d:
@@ -1780,7 +1787,7 @@ if "Arbol de Decision" in _visible:
 
         if not hay_citas:
             st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
-                    "en cuanto existan datos reales.", icon=":material/info:")
+                    "en cuanto existan datos reales.", icon=INFO_ICON)
         else:
             with st.spinner("Entrenando Árbol de Decisión…"):
                 metricas_dt, conf_dt, feat_imp_dt = entrenar_arbol(spark, df)
@@ -1805,7 +1812,7 @@ if "Arbol de Decision" in _visible:
                 fig = px.imshow(pivot, text_auto=True, color_continuous_scale=[[0, DARK], [1, GOLD]],
                                 title="Matriz de Confusión — Árbol de Decisión",
                                 labels=dict(x="Predicción", y="Real", color="Cantidad"))
-                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                fig.update_layout(paper_bgcolor=TRANSPARENT, font_color="white")
                 st.plotly_chart(fig, use_container_width=True)
 
             with col_b:
@@ -1815,7 +1822,7 @@ if "Arbol de Decision" in _visible:
                               title="Importancia de Variables — Árbol de Decisión",
                               color=feat_imp_dt, color_continuous_scale=[[0, "#333"], [1, GOLD]],
                               labels={"x": "Variable", "y": "Importancia", "color": "Importancia"})
-                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                fig2.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                    font_color="white", coloraxis_showscale=False)
                 st.plotly_chart(fig2, use_container_width=True)
 
@@ -1831,7 +1838,7 @@ if "Arbol de Decision" in _visible:
                 fig3.update_layout(title="Métricas del Modelo (Radar)",
                                    polar=dict(radialaxis=dict(visible=True, range=[0, 1], color="white"),
                                               angularaxis=dict(color="white")),
-                                   paper_bgcolor="rgba(0,0,0,0)", font_color="white", showlegend=False)
+                                   paper_bgcolor=TRANSPARENT, font_color="white", showlegend=False)
                 st.plotly_chart(fig3, use_container_width=True)
 
             with col_d:
@@ -1860,7 +1867,7 @@ if "Random Forest" in _visible:
 
         if not hay_citas:
             st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
-                    "en cuanto existan datos reales.", icon=":material/info:")
+                    "en cuanto existan datos reales.", icon=INFO_ICON)
         else:
             with st.spinner("Entrenando Random Forest (100 árboles)…"):
                 metricas_rf, conf_rf, feat_imp_rf, dist_estados = entrenar_rf(spark, df)
@@ -1884,7 +1891,7 @@ if "Random Forest" in _visible:
                 fig = px.imshow(pivot_rf, text_auto=True, color_continuous_scale=[[0, DARK], [1, RED]],
                                 title="Matriz de Confusión — Random Forest",
                                 labels=dict(x="Predicción", y="Real", color="Cantidad"))
-                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                fig.update_layout(paper_bgcolor=TRANSPARENT, font_color="white")
                 st.plotly_chart(fig, use_container_width=True)
 
             with col_b:
@@ -1893,7 +1900,7 @@ if "Random Forest" in _visible:
                               title="Importancia de Variables — Random Forest",
                               color=feat_imp_rf, color_continuous_scale=[[0, "#333"], [1, RED]],
                               labels={"x": "Variable", "y": "Importancia"}, text_auto=".3f")
-                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                fig2.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                    font_color="white", coloraxis_showscale=False)
                 st.plotly_chart(fig2, use_container_width=True)
 
@@ -1906,7 +1913,7 @@ if "Random Forest" in _visible:
                 fig3 = px.bar(dist_estados_bar, x="count", y="estado", orientation="h",
                               title="Distribución Real de Estados en Datos de Entrenamiento",
                               color="count", color_continuous_scale=[[0, "#444"], [1, GOLD]])
-                fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                fig3.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                     font_color="white", coloraxis_showscale=False,
                                     yaxis_title="", xaxis_title="Cantidad")
                 st.plotly_chart(fig3, use_container_width=True)
@@ -1921,7 +1928,7 @@ if "Random Forest" in _visible:
                 fig4.update_layout(title="Métricas Random Forest (Radar)",
                                    polar=dict(radialaxis=dict(visible=True, range=[0, 1], color="white"),
                                               angularaxis=dict(color="white")),
-                                   paper_bgcolor="rgba(0,0,0,0)", font_color="white", showlegend=False)
+                                   paper_bgcolor=TRANSPARENT, font_color="white", showlegend=False)
                 st.plotly_chart(fig4, use_container_width=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1934,7 +1941,7 @@ if "Churn / Abandono" in _visible:
 
         if not hay_citas:
             st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
-                    "en cuanto existan datos reales.", icon=":material/info:")
+                    "en cuanto existan datos reales.", icon=INFO_ICON)
         else:
             ch_metrics, ch_imp, ch_riesgo, (n_riesgo, n_total) = entrenar_churn(spark, df)
 
@@ -1950,7 +1957,7 @@ if "Churn / Abandono" in _visible:
                 fig = px.bar(imp_df, x="importancia", y="variable", orientation="h",
                              title="Qué anticipa el abandono (importancia de variables)",
                              color="importancia", color_continuous_scale=[[0, "#333"], [1, RED]], text_auto=".3f")
-                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                fig.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                   font_color="white", coloraxis_showscale=False)
                 st.plotly_chart(fig, use_container_width=True)
             with col_b:
@@ -1958,7 +1965,7 @@ if "Churn / Abandono" in _visible:
                                         labels=["En riesgo", "Estables"], hole=0.5,
                                         marker_colors=[RED, GREEN]))
                 fig2.update_layout(title="Clientes en riesgo vs estables",
-                                   paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                                   paper_bgcolor=TRANSPARENT, font_color="white")
                 st.plotly_chart(fig2, use_container_width=True)
 
             st.subheader("Clientes con mayor probabilidad de abandono")
@@ -1977,7 +1984,7 @@ if "Demanda" in _visible:
 
         if not hay_citas:
             st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
-                    "en cuanto existan datos reales.", icon=":material/info:")
+                    "en cuanto existan datos reales.", icon=INFO_ICON)
         else:
             dem_hora, dem_dia, dem_mes, dem_r2, dem_imp = analizar_demanda(spark, df)
 
@@ -1993,14 +2000,14 @@ if "Demanda" in _visible:
                 fig = px.bar(dem_hora, x="hora", y="citas", title="Demanda por hora del día",
                              color="citas", color_continuous_scale=[[0, "#333"], [1, GOLD]],
                              labels={"hora": "Hora", "citas": "Citas"})
-                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                fig.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                   font_color="white", coloraxis_showscale=False)
                 st.plotly_chart(fig, use_container_width=True)
             with col_b:
                 fig2 = px.bar(dem_dia, x="dia_nombre", y="citas", title="Demanda por día de la semana",
                               color="citas", color_continuous_scale=[[0, "#333"], [1, BLUE]],
                               labels={"dia_nombre": "", "citas": "Citas"})
-                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                fig2.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                    font_color="white", coloraxis_showscale=False)
                 st.plotly_chart(fig2, use_container_width=True)
 
@@ -2012,14 +2019,14 @@ if "Demanda" in _visible:
                                           yaxis="y2", line=dict(color=RED, width=2)))
                 fig3.update_layout(title="Estacionalidad mensual: citas y % cancelación",
                                    yaxis=dict(title="Citas"), yaxis2=dict(title="Cancel %", overlaying="y", side="right"),
-                                   paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                                   paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT, font_color="white")
                 st.plotly_chart(fig3, use_container_width=True)
             with col_d:
                 imp_df = pd.DataFrame(dem_imp, columns=["variable", "importancia"]).sort_values("importancia")
                 fig4 = px.bar(imp_df, x="importancia", y="variable", orientation="h",
                               title="Qué determina la demanda", color="importancia",
                               color_continuous_scale=[[0, "#333"], [1, GREEN]], text_auto=".3f")
-                fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                fig4.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                    font_color="white", coloraxis_showscale=False)
                 st.plotly_chart(fig4, use_container_width=True)
 
@@ -2029,14 +2036,14 @@ if "Demanda" in _visible:
             if _forecast is None:
                 st.info("Todavía no hay suficiente historial semanal (mínimo 4 semanas) para "
                         "proyectar hacia adelante con algo de confianza — aparecerá automáticamente "
-                        "en cuanto haya más semanas de citas reales.", icon=":material/info:")
+                        "en cuanto haya más semanas de citas reales.", icon=INFO_ICON)
             else:
                 st.info("Proyección por tendencia lineal simple, no un modelo complejo tipo "
                         "ARIMA/Prophet: con pocos meses de historial real, un modelo más sofisticado "
                         "sobreajustaría y daría una falsa sensación de precisión. El R² de cada "
                         "proyección indica qué tan bien la tendencia lineal explica el histórico — "
                         "entre más bajo, más ancha debería sentirse la incertidumbre real.",
-                        icon=":material/info:")
+                        icon=INFO_ICON)
 
                 col_p1, col_p2 = st.columns(2)
                 for columna, col_dest, color_, nombre in [
@@ -2048,7 +2055,7 @@ if "Demanda" in _visible:
                         fig_f = go.Figure()
                         fig_f.add_trace(go.Scatter(
                             x=datos["historico"]["fecha"], y=datos["historico"]["valor"],
-                            mode="lines+markers", name="Real", line=dict(color="#999", width=2)))
+                            mode=LINE_MARKERS, name="Real", line=dict(color="#999", width=2)))
                         fig_f.add_trace(go.Scatter(
                             x=datos["proyeccion"]["fecha"], y=datos["proyeccion"]["max"],
                             mode="lines", line=dict(width=0), showlegend=False, hoverinfo="skip"))
@@ -2059,11 +2066,11 @@ if "Demanda" in _visible:
                             showlegend=False, hoverinfo="skip"))
                         fig_f.add_trace(go.Scatter(
                             x=datos["proyeccion"]["fecha"], y=datos["proyeccion"]["valor"],
-                            mode="lines+markers", name="Proyección",
+                            mode=LINE_MARKERS, name="Proyección",
                             line=dict(color=color_, width=2, dash="dash")))
                         fig_f.update_layout(
                             title=f"{nombre} — R²={datos['r2']:.2f}",
-                            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                            paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                             font_color="white", legend=dict(orientation="h", y=-0.2),
                         )
                         # Anotaciones manuales (eventos conocidos) — ver expander
@@ -2091,7 +2098,7 @@ if "KMeans" in _visible:
 
         if not hay_citas:
             st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
-                    "en cuanto existan datos reales.", icon=":material/info:")
+                    "en cuanto existan datos reales.", icon=INFO_ICON)
         else:
             with st.spinner(f"Ejecutando KMeans K={k_clusters} y Método del Codo…"):
                 ks, wcss, sil_scores, km_pdf, sil, centers = entrenar_kmeans(df_vector, k_clusters)
@@ -2105,12 +2112,12 @@ if "KMeans" in _visible:
 
             with col_a:
                 fig = make_subplots(rows=1, cols=2, subplot_titles=("WCSS — Método del Codo", "Silhouette por K"))
-                fig.add_trace(go.Scatter(x=ks, y=wcss, mode="lines+markers",
+                fig.add_trace(go.Scatter(x=ks, y=wcss, mode=LINE_MARKERS,
                                          line=dict(color=GOLD, width=2), marker=dict(size=8)), row=1, col=1)
-                fig.add_trace(go.Scatter(x=ks, y=sil_scores, mode="lines+markers",
+                fig.add_trace(go.Scatter(x=ks, y=sil_scores, mode=LINE_MARKERS,
                                          line=dict(color=GREEN, width=2), marker=dict(size=8)), row=1, col=2)
                 fig.add_vline(x=k_clusters, line_dash="dash", line_color=RED)
-                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                fig.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                   font_color="white", showlegend=False, title_text="Evaluación de K")
                 st.plotly_chart(fig, use_container_width=True)
 
@@ -2121,7 +2128,7 @@ if "KMeans" in _visible:
                                   hover_data=["servicio", "barbero", "duracion_min", "estado"],
                                   color_discrete_sequence=px.colors.qualitative.Set1,
                                   labels={"color": "Cluster", "precio": "Precio ($MXN)", "ingreso": "Ingreso ($MXN)"})
-                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                fig2.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT, font_color="white")
                 st.plotly_chart(fig2, use_container_width=True)
 
             col_c, col_d = st.columns(2)
@@ -2133,7 +2140,7 @@ if "KMeans" in _visible:
                                      hover_name="servicio",
                                      color_discrete_sequence=px.colors.qualitative.Set1,
                                      labels={"color": "Cluster", "duracion_min": "Duración (min)"})
-                fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                fig3.update_layout(paper_bgcolor=TRANSPARENT, font_color="white")
                 st.plotly_chart(fig3, use_container_width=True)
 
             with col_d:
@@ -2142,7 +2149,7 @@ if "KMeans" in _visible:
                               title="Servicios por Cluster",
                               labels={"cluster": "Cluster", "count": "Citas", "servicio": "Servicio"},
                               color_discrete_sequence=px.colors.qualitative.Pastel)
-                fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                fig4.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT, font_color="white")
                 st.plotly_chart(fig4, use_container_width=True)
 
             st.subheader("Centroides de Clusters")
@@ -2160,7 +2167,7 @@ if "PCA" in _visible:
 
         if not hay_citas:
             st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
-                    "en cuanto existan datos reales.", icon=":material/info:")
+                    "en cuanto existan datos reales.", icon=INFO_ICON)
         else:
             with st.spinner("Ejecutando PCA + KMeans…"):
                 pca_pdf, varianza, pca_sil = entrenar_pca(df_vector, df)
@@ -2182,7 +2189,7 @@ if "PCA" in _visible:
                                  labels={"color": "Cluster",
                                          "PC1": f"PC1 ({varianza[0]:.1f}% varianza)",
                                          "PC2": f"PC2 ({varianza[1]:.1f}% varianza)"})
-                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                fig.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT, font_color="white")
                 st.plotly_chart(fig, use_container_width=True)
 
             with col_b:
@@ -2196,7 +2203,7 @@ if "PCA" in _visible:
                                           line_color=GREEN, text=[f"{sum(varianza[:1]):.1f}%", f"{sum(varianza):.1f}%"],
                                           textposition="top right", textfont_color="white"))
                 fig2.update_layout(title="Varianza Explicada por Componente Principal",
-                                   paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                   paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT,
                                    font_color="white", yaxis_title="%", showlegend=True)
                 st.plotly_chart(fig2, use_container_width=True)
 
@@ -2207,7 +2214,7 @@ if "PCA" in _visible:
                 fig3 = px.sunburst(svc_pca, path=["cluster", "servicio"], values="count",
                                    title="Composición de Clusters por Servicio (Sunburst)",
                                    color_discrete_sequence=px.colors.qualitative.Set1)
-                fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                fig3.update_layout(paper_bgcolor=TRANSPARENT, font_color="white")
                 st.plotly_chart(fig3, use_container_width=True)
 
             with col_d:
@@ -2221,7 +2228,7 @@ if "PCA" in _visible:
                               barmode="group", title="Perfil de Clusters PCA (promedios)",
                               labels={"value": "Valor", "cluster": "Cluster", "variable": "Métrica"},
                               color_discrete_sequence=[GOLD, GREEN, BLUE])
-                fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                fig4.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT, font_color="white")
                 st.plotly_chart(fig4, use_container_width=True)
 
             st.subheader("Interpretación de Clusters PCA")
@@ -2246,7 +2253,7 @@ if "Segmentacion Clientes" in _visible:
 
         if not hay_citas:
             st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
-                    "en cuanto existan datos reales.", icon=":material/info:")
+                    "en cuanto existan datos reales.", icon=INFO_ICON)
         else:
             seg_pdf, seg_sil, seg_stats = entrenar_segmentacion(spark, df)
 
@@ -2264,7 +2271,7 @@ if "Segmentacion Clientes" in _visible:
                 fig = px.pie(dist, values="clientes", names="segmento", hole=0.45,
                              title="Distribución de Clientes por Segmento",
                              color_discrete_sequence=px.colors.qualitative.Set2)
-                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                fig.update_layout(paper_bgcolor=TRANSPARENT, font_color="white")
                 st.plotly_chart(fig, use_container_width=True)
             with col_b:
                 fig2 = px.scatter(seg_pdf, x="total_citas", y="gasto_total", color="segmento",
@@ -2272,7 +2279,7 @@ if "Segmentacion Clientes" in _visible:
                                   title="Clientes: Frecuencia vs Gasto (color = segmento)",
                                   labels={"total_citas": "Total de citas", "gasto_total": "Gasto total ($MXN)"},
                                   color_discrete_sequence=px.colors.qualitative.Set2)
-                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                fig2.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT, font_color="white")
                 st.plotly_chart(fig2, use_container_width=True)
 
             st.subheader("Perfil promedio de cada segmento")
@@ -2295,7 +2302,7 @@ if "Recomendacion" in _visible:
 
         if not hay_citas:
             st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
-                    "en cuanto existan datos reales.", icon=":material/info:")
+                    "en cuanto existan datos reales.", icon=INFO_ICON)
         else:
             freq_pdf, rules_pdf, pop_pdf = entrenar_recomendacion(spark, df)
 
@@ -2310,7 +2317,7 @@ if "Recomendacion" in _visible:
                              title="Servicios más solicitados",
                              labels={"veces_pedido": "Veces pedido", "servicio": ""},
                              color_discrete_sequence=px.colors.qualitative.Set2)
-                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                fig.update_layout(paper_bgcolor=TRANSPARENT, plot_bgcolor=TRANSPARENT, font_color="white")
                 st.plotly_chart(fig, use_container_width=True)
             with col_b:
                 st.markdown("**Itemsets frecuentes (servicios que aparecen juntos)**")

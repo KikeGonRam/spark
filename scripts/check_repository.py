@@ -23,16 +23,36 @@ def main():
             '.pem', '.key', '.p12', '.jks', '.keystore', '.parquet', '.joblib', '.pkl'
         }:
             invalid.append(filename)
-        if re.search(r'(?i)service.?account|adminsdk|accesskeys|credentials.*\.json$', filename):
+        lower = filename.lower()
+        if (any(token in lower for token in ("serviceaccount", "service_account", "service-account", "adminsdk", "accesskeys"))
+                or ("credentials" in lower and lower.endswith(".json"))):
             invalid.append(filename)
     required = ['README.md', 'SECURITY.md', 'CONTRIBUTING.md', 'LICENSE', 'LICENSING.md',
                 'docs/arquitectura.md', 'docs/desarrollo.md', 'docs/operacion.md',
                 'dashboard/app.py', 'pipelines/publicar_insights.py']
     missing = [filename for filename in required if not (ROOT / filename).is_file()]
     for path in (ROOT / '.github/workflows').glob('*.yml'):
-        for uses in re.findall(r'^\s*-?\s*uses:\s*([^\s#]+)', path.read_text(encoding='utf-8'), re.MULTILINE):
+        for line in path.read_text(encoding='utf-8').splitlines():
+            key, separator, value = line.strip().removeprefix('- ').partition(':')
+            if not separator or key.strip() != 'uses':
+                continue
+            uses = value.partition('#')[0].strip()
             if not uses.startswith('./') and not re.fullmatch(r'[\w.-]+/[\w.-]+@[a-f0-9]{40}', uses):
                 invalid.append(str(path.relative_to(ROOT)) + ': Action sin SHA completo')
+    for profile in ('ci', 'dashboard'):
+        source = ROOT / f'requirements-{profile}.txt'
+        lock = ROOT / f'requirements-{profile}.lock'
+        if not lock.exists():
+            missing.append(str(lock.relative_to(ROOT)))
+            continue
+        pinned = {line.split('==', 1)[0].lower().replace('_', '-').replace('.', '-'): line.split('==', 1)[1].strip().rstrip(chr(92)).strip()
+                  for line in lock.read_text(encoding='utf-8').splitlines()
+                  if '==' in line and not line.lstrip().startswith('#')}
+        for line in source.read_text(encoding='utf-8').splitlines():
+            if '==' in line and not line.lstrip().startswith('#'):
+                name, version = line.strip().split('==', 1)
+                if pinned.get(name.lower().replace('_', '-').replace('.', '-')) != version:
+                    invalid.append(str(lock.relative_to(ROOT)) + ': resolución desactualizada para ' + name)
     documents = list(ROOT.glob('*.md')) + list((ROOT / 'docs').rglob('*.md'))
     for document in documents:
         for target in re.findall(r'\]\(([^)]+)\)', document.read_text(encoding='utf-8')):
