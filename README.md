@@ -94,6 +94,7 @@ construye el runtime y prueba Spark/Streamlit con datos sintéticos. Las Actions
 imágenes base están fijadas y Dependabot propone actualizaciones por PR, sin automerge.
 La auditoría Python no equivale a una certificación del sistema o de sus modelos.
 
+[Mantenimiento](docs/gobierno.md) · [Cambios](CHANGELOG.md) ·
 [Contribuir](CONTRIBUTING.md) · [Seguridad](SECURITY.md) ·
 [Migración de rutas](docs/migracion.md) · [Licencia](LICENSING.md).
 

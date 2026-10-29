@@ -13,3 +13,6 @@
 El código y los manifiestos definen el comportamiento. Las referencias heredadas
 conservan contexto, pero sus métricas no se recertifican al modernizar la estructura.
 Las evidencias locales, CI, fusión y servicio publicado se informan separadamente.
+
+- [Mantenimiento y entrega](gobierno.md).
+- [Decisiones de arquitectura](decisiones/README.md).
