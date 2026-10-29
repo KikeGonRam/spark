@@ -16,10 +16,8 @@ Solo depende de `requests` y `python-dotenv`, para poder probarse sin PySpark.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 import requests
-from dotenv import load_dotenv
 
 # Roles reales de `barber` (RolePermissionSeeder) autorizados a ver el dashboard.
 # 'ingeniero' es el nombre real del rol; spark lo presenta como "Analista".
@@ -37,7 +35,8 @@ class ApiNoDisponible(Exception):
 
 
 def _cargar_env() -> None:
-    load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
+    from config.settings import load_environment
+    load_environment()
 
 
 def _api_base() -> str:
@@ -47,7 +46,11 @@ def _api_base() -> str:
 
 
 def _usuario_autorizado(user: dict) -> dict | None:
+    if not isinstance(user, dict):
+        return None
     roles = user.get("roles") or []
+    if not isinstance(roles, list):
+        return None
     rol = next((r for r in roles if r in ROLES_AUTORIZADOS), None)
     if rol is None:
         return None
@@ -102,6 +105,8 @@ def autenticar_usuario(email: str, password: str) -> dict | None:
     except ValueError as exc:
         raise ApiNoDisponible("respuesta no JSON") from exc
 
+    if not isinstance(datos, dict):
+        raise ApiNoDisponible("respuesta de autenticación inválida")
     token = datos.get("token")
     if token:
         _revocar(base, token)
@@ -137,7 +142,10 @@ def verificar_google_token(token: str) -> dict | None:
         return None
 
     try:
-        user = resp.json().get("user") or {}
+        datos = resp.json()
+        if not isinstance(datos, dict):
+            return None
+        user = datos.get("user") or {}
     except ValueError:
         return None
 

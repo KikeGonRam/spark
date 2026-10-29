@@ -1,172 +1,105 @@
-# UrbanBlade — Extracción del conocimiento en bases de datos
+# UrbanBlade Analytics
 
-Proyecto de análisis de datos de una barbería con **Apache Spark / PySpark** + **MongoDB Atlas**,
-organizado por las **5 unidades** de la asignatura (UTVT · IDGS-93 · Mayo–Agosto 2026).
+Analítica operativa, modelos de negocio y dashboard ejecutivo de UrbanBlade.
+Lee el core de MongoDB con una identidad de solo lectura, calcula indicadores
+y publica derivados reconstruibles mediante un proceso explícito y separado.
 
-**Equipo:** Equipo UrbanBlade · **Docente:** MGTI. Héctor Velázquez Estrada
-**Datos reales:** `barber_db` — 12,535 citas · 1,000 clientes · 25 barberos · 20 servicios.
+El repositorio evoluciona como producto independiente. La organización por unidades
+y los entregables académicos se retiraron de la entrada del proyecto; se conservan
+los antecedentes técnicos y postmortems que siguen siendo útiles.
 
----
+## Capacidades
 
-## Organización por unidad
+- Indicadores de citas, ingresos, pagos, inventario, pedidos y utilización del equipo.
+- Retención, CLV simplificado, demanda, anomalías y segmentación.
+- Modelos supervisados y no supervisados ejecutables bajo demanda.
+- Dashboard Streamlit con identidad de UrbanBlade y autenticación delegada a Barber.
+- Publicación atómica de insights en una base de derivados, nunca en el core.
 
-Todo el proyecto está ordenado en [`unidades/`](unidades/README.md), una carpeta por unidad,
-cada una con su `README.md` y el checklist de entregables que pide la secuencia didáctica.
+La disponibilidad de un modelo no demuestra calidad predictiva actual. Las métricas
+históricas y modelos guardados necesitan evaluación antes de usarse para decisiones.
 
-| Unidad | Tema | Carpeta |
-|---|---|---|
-| **I** | Introducción al análisis de datos | [`unidades/unidad_1_introduccion/`](unidades/unidad_1_introduccion/) |
-| **II** | Preparación de los datos (ETL, DW, limpieza) | [`unidades/unidad_2_preparacion/`](unidades/unidad_2_preparacion/) |
-| **III** | Análisis supervisado (regresión, clasificación) | [`unidades/unidad_3_supervisado/`](unidades/unidad_3_supervisado/) |
-| **IV** | Análisis no supervisado (KMeans, PCA, FP-Growth) | [`unidades/unidad_4_no_supervisado/`](unidades/unidad_4_no_supervisado/) |
-| **V** | Presentación y visualización (dashboard, Matplotlib) | [`unidades/unidad_5_visualizacion/`](unidades/unidad_5_visualizacion/) |
+## Estructura
 
-Índice completo con checklist de entregables: [`unidades/README.md`](unidades/README.md).
+| Ruta | Responsabilidad |
+| --- | --- |
+| [config](config) | Conexiones, configuración validada, autenticación y publicación. |
+| [analytics/preparation](analytics/preparation/README.md) | Calidad, preparación y ETL. |
+| [analytics/supervised](analytics/supervised/README.md) | Regresión, clasificación, abandono y demanda. |
+| [analytics/unsupervised](analytics/unsupervised/README.md) | Segmentación, PCA, clustering y recomendaciones. |
+| [dashboard](dashboard/README.md) | Aplicación y paneles de detalle. |
+| [pipelines](pipelines) | Publicación de derivados para consumidores de UrbanBlade. |
+| [data_ingestion](data_ingestion) | Generación reproducible de datos sintéticos, sin escritura por defecto. |
+| [tests](tests) | Contratos, protección del core, integración local y runtime sintético. |
+| [docs](docs/README.md) | Arquitectura, desarrollo, operación, modelos y migración. |
 
----
+## Inicio seguro
 
-## Estructura del proyecto
-
-```
-spark/
-├── README.md                         ← este archivo
-├── SKILL.md                          ← guía técnica del proyecto
-├── .env                              ← credenciales MongoDB (NO se sube a git)
-├── requirements.txt
-│
-├── config/                           ← MOTOR compartido (capa de datos única)
-│   ├── mongo_spark_conexion_sinnulos.py   ← conexión + JOIN + features  ← USAR ESTA
-│   └── mongo_spark_conexion.py            ← conexión base (legacy)
-│
-├── data_ingestion/
-│   └── generar_datos_urbanblade.py
-│
-├── data/etl_output/                  ← salida del ETL (Parquet/CSV) — en .gitignore
-│
-└── unidades/
-    ├── README.md                     ← índice por unidad + checklist
-    ├── unidad_1_introduccion/        ← 2 documentos (comparativa + caso de estudio)
-    ├── unidad_2_preparacion/         ← 7 scripts + esquema DW + docs
-    ├── unidad_3_supervisado/         ← 6 scripts + reporte de evaluación + docs
-    ├── unidad_4_no_supervisado/      ← 4 scripts + reporte de evaluación + docs
-    └── unidad_5_visualizacion/       ← dashboard ejecutivo + Matplotlib
-```
-
-Los scripts **localizan la raíz del proyecto automáticamente**, así que se ejecutan
-correctamente desde cualquier ruta (buscan la carpeta `config/`).
-
----
-
-## Stack
-
-| Componente | Detalle |
-|---|---|
-| OS | WSL Ubuntu 24.04 |
-| Python | 3.11 (Miniconda `spark_env`) |
-| PySpark | 3.5.x |
-| ML | Spark MLlib + PyTorch |
-| Base de datos | MongoDB Atlas (`barber_db`) |
-| Visualización | Matplotlib · Plotly · Streamlit |
-
----
-
-## Configuración MongoDB (`.env` en la raíz)
-
-**Nunca subas tu `.env` real a git** (ya está en `.gitignore`). El repositorio incluye
-[`.env.example`](.env.example) como plantilla — cópialo y llena los valores reales:
-
-```bash
-cp .env.example .env
-```
-
-```env
-# .env.example — plantilla, sin credenciales reales
-MONGO_USER=
-MONGO_PASSWORD=
-MONGO_CLUSTER=
-MONGO_DB=barber_db
-```
-
-| Variable | De dónde se obtiene |
-|---|---|
-| `MONGO_USER` | Atlas → Database Access → Database Users |
-| `MONGO_PASSWORD` | Atlas → Database Access → Edit → Edit Password |
-| `MONGO_CLUSTER` | Atlas → Database → Connect → Drivers (solo el host, sin `mongodb+srv://` ni credenciales) |
-| `MONGO_DB` | `barber_db` (nombre fijo del proyecto) |
-
-Pide estos 4 valores al responsable del proyecto — **no se comparten por chat ni se
-suben al repositorio**, solo se entregan directamente al archivo `.env` local de cada
-integrante.
-
-La capa de datos (`config/mongo_spark_conexion_sinnulos.py`) hace un **JOIN de 4 colecciones**
-en PyMongo y entrega un DataFrame Spark enriquecido:
-```
-appointments + services + barbers(→users) + clients(→users) → DataFrame Spark
-```
-
-Además expone helpers para **5 colecciones adicionales** (`payments`, `loyalty_transactions`,
-`barber_schedules`, `products`, `barbershop_settings`) usadas en Unidad II y visualizadas
-en el dashboard ejecutivo (Unidad V): pagos/calidad, fidelización, utilización de barberos
-e inventario. Ver [`unidades/unidad_2_preparacion/README.md`](unidades/unidad_2_preparacion/README.md).
-
----
-
-## Clonar, configurar y ejecutar (guía completa)
-
-Para integrantes nuevos del equipo, en Windows con PowerShell:
+Python **3.12**, Java **17** y Spark **3.5.9** son la combinación de runtime elegida.
+Para pruebas rápidas no se necesitan Spark, Java ni variables reales:
 
 ```powershell
-# 1. Clona el repo y prepara el entorno (WSL + Java + Miniconda + spark_env)
-git clone https://github.com/KikeGonRam/spark.git
-cd spark
-.\setup-spark.ps1
+python -m venv .venv
+.venv/Scripts/python -m pip install -r requirements-ci.txt
+.venv/Scripts/python -B -m pytest tests/ -q
 ```
 
-El script se detendrá en el paso de `.env` la primera vez — en ese momento:
+Los casos de runtime se omiten si no están instaladas las dependencias del dashboard;
+la integración se omite si no hay un Mongo local aislado configurado. La guía de
+[desarrollo](docs/desarrollo.md) distingue cada nivel y sus requisitos.
+
+## Configuración privada
+
+Copiar [.env.example](.env.example) solo para crear un archivo nuevo; no sobrescribir
+credenciales existentes. También se puede apuntar a un archivo privado existente:
 
 ```powershell
-# 2. Copia la plantilla y pide los valores reales al responsable del proyecto
-cp .env.example .env
-notepad .env    # pega MONGO_USER / MONGO_PASSWORD / MONGO_CLUSTER / MONGO_DB
-
-# 3. Vuelve a correr el script para validar la conexión a MongoDB Atlas
-.\setup-spark.ps1
+$env:URBANBLADE_ENV_FILE = 'C:/ruta/privada/spark/.env'
+python -m config.diagnostics
 ```
 
-Cuando termine sin errores, ya puedes ejecutar cualquier script (ver
-[`unidades/COMANDOS.txt`](unidades/COMANDOS.txt) para la lista completa):
+Este diagnóstico valida configuración y separación de bases sin conectarse. Añadir
+`--connect` solo para un ping y revisión de privilegios, sin consultar registros.
+Nunca pegar URI, contraseñas o contenido de `.env` en issues, logs o PR.
 
-```bash
-# Desde WSL (Ubuntu), dentro de la carpeta del proyecto
-conda activate spark_env
-spark-submit unidades/unidad_3_supervisado/01_regresion.py
-streamlit run unidades/unidad_5_visualizacion/main_dashboard.py
+## Ejecutar el dashboard
+
+```powershell
+.venv/Scripts/python -m pip install -r requirements-dashboard.txt
+.venv/Scripts/streamlit run dashboard/app.py
 ```
 
-Instala/valida automáticamente: WSL2 + Ubuntu, Java (OpenJDK 11), Miniconda, el entorno
-`spark_env` con Python 3.11, y todas las dependencias de `requirements.txt`. Si no existe
-un archivo `.env`, el script se detiene y explica cómo obtenerlo (no genera uno falso).
+O usar el Compose local descrito en [operación](docs/operacion.md). El puerto se
+publica en `127.0.0.1:8501`; el servicio se conecta a la red externa de Barber ya
+existente. No inicia ni migra el backend y no es un procedimiento de despliegue AWS.
 
-## Cómo ejecutar
+Los roles administrador e ingeniero (presentado como Analista) se validan en Barber.
+Spark no lee ni compara hashes de contraseñas del core.
 
-```bash
-# 1. Entrar al entorno (WSL) — usa la ruta montada de Windows, NO ~/spark
-#    (~/spark es una copia nativa de WSL desactualizada, sin la carpeta unidades/)
-wsl -d Ubuntu && cd /mnt/c/Users/<tu_usuario>/Documents/UrbanBlade/spark && conda activate spark_env
+## Datos y publicación
 
-# 2. Ejemplos por unidad
-spark-submit unidades/unidad_2_preparacion/05_etl.py                 # ETL → data warehouse
-spark-submit unidades/unidad_3_supervisado/01_regresion.py           # regresión (R², MSE, MAE)
-spark-submit unidades/unidad_4_no_supervisado/03_segmentacion_clientes.py  # segmentación
+El core es solo lectura. Los únicos destinos de escritura son `analytics_insights`
+y `appointments_synthetic`, dentro de la base de derivados y con credenciales
+separadas. Ambas rutas están bloqueadas por defecto y requieren confirmación CLI.
+Consultar [arquitectura](docs/arquitectura.md) y [operación](docs/operacion.md).
 
-# 3. Dashboard ejecutivo (Unidad V) — abre en http://localhost:8501
-streamlit run unidades/unidad_5_visualizacion/main_dashboard.py
-```
+Las salidas ETL y modelos son artefactos privados, ignorados por Git. No se incluyen
+datos reales en imágenes Docker ni fixtures; CI usa Mongo local desechable y datos
+sintéticos. El build del dashboard no instala torch o TensorFlow.
 
----
+## Calidad y colaboración
 
-## Nota metodológica (importante)
+CI valida sintaxis, errores estáticos, contratos y publicación local; otro job
+construye el runtime y prueba Spark/Streamlit con datos sintéticos. Las Actions e
+imágenes base están fijadas y Dependabot propone actualizaciones por PR, sin automerge.
+La auditoría Python no equivale a una certificación del sistema o de sus modelos.
 
-Los modelos se diseñaron **sin fuga de datos (leakage)**: la variable objetivo nunca
-aparece entre las features. Por eso las métricas son **realistas y defendibles**
-(p. ej. R² ≈ 0.6–0.9, no 1.0). Detalle en los reportes de evaluación de las Unidades III y IV.
+[Contribuir](CONTRIBUTING.md) · [Seguridad](SECURITY.md) ·
+[Migración de rutas](docs/migracion.md) · [Licencia](LICENSING.md).
+
+## Licencia
+
+GNU GPLv3, versión 3 únicamente (**GPL-3.0-only**). Texto íntegro en [LICENSE](LICENSE).
+Los datos reales, credenciales y componentes de terceros no cambian de titularidad
+por distribuir el código. Versión de desarrollo: 0.1.0; no implica una publicación
+ni actualización del servicio actualmente desplegado.

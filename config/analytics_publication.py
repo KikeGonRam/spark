@@ -1,10 +1,19 @@
 """Publicación segura de derivados analíticos en MongoDB."""
 
 from datetime import datetime, timezone
+import os
 
 
 def publish_insights_atomically(db, insights, target_collection="analytics_insights"):
     """Publica un snapshot completo sin dejar el destino vacío entre pasos."""
+    if target_collection != "analytics_insights":
+        raise ValueError("El publicador solo admite analytics_insights.")
+    if not isinstance(db.name, str) or db.name in {
+        os.getenv("MONGO_DB", "barber_db"), "admin", "config", "local"
+    }:
+        raise ValueError("El destino debe ser una base de derivados separada del core.")
+    if not insights:
+        raise ValueError("Un snapshot vacío no sustituye los insights publicados.")
     suffix = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
     temporary_collection = f"{target_collection}__{suffix}"
 

@@ -1,14 +1,14 @@
-# Dependencias minimas para correr SOLO el dashboard (unidades/unidad_5_visualizacion/
-# main_dashboard.py) en Docker. El requirements.txt completo (torch, tensorflow,
-# xgboost, etc.) es para los scripts de las demas unidades del curso y no hace
-# falta para el dashboard -- usar ese archivo aqui inflaria la imagen varios GB
-# sin necesidad.
-pyspark==3.5.1
-pymongo==4.7.2
-python-dotenv==1.2.2
-pandas==2.2.2
+# Runtime de UrbanBlade Analytics: Python 3.12, Spark 3.5 y Java 17.
+# pandas 2.x / NumPy 1.x conservan compatibilidad del runtime Spark 3.5.
+pyspark==3.5.9
+pymongo==4.19.0
+python-dotenv==1.2.4
+pandas==2.3.3
 numpy==1.26.4
-plotly==5.22.0
-streamlit==1.35.0
-fpdf2==2.8.8
-requests==2.31.0
+plotly==7.1.0
+streamlit==1.66.1
+fpdf2==2.8.9
+requests==2.34.2
+
+# PySpark 3.5 importa distutils; Python 3.12 necesita la implementación de setuptools.
+setuptools==84.2.1

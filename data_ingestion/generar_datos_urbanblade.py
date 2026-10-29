@@ -1,89 +1,73 @@
-import random
-from pymongo import MongoClient
-from dotenv import load_dotenv
-from pathlib import Path
+"""Generación reproducible de datos sintéticos; nunca modifica el core."""
+
+import argparse
+import json
 import os
-from urllib.parse import quote_plus
+from hashlib import sha256
+import sys
+from pathlib import Path
 
-env_path = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(dotenv_path=env_path)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-# Credenciales de ANALYTICS, no las del core. El usuario de MONGO_USER es el de
-# lectura de barber_db: usarlo para escribir convertiría un generador de datos
-# sintéticos en una vía de escritura sobre la base real de la app, que es
-# justamente el incidente que este repositorio ya sufrió (ver
-# unidades/unidad_6_caso_aplicado_laravel/01_diagnostico_incidente.md).
-user         = os.getenv("ANALYTICS_MONGO_USER")
-password_raw = os.getenv("ANALYTICS_MONGO_PASSWORD")
-cluster      = os.getenv("ANALYTICS_MONGO_CLUSTER")
-database     = os.getenv("ANALYTICS_MONGO_DB")
-# Always use the dedicated synthetic collection — never touch the production 'appointments'
-coll         = os.getenv("MONGO_COLLECTION_SYNTHETIC", "appointments_synthetic")
+from config.settings import connect_mongo, load_environment, require_write_opt_in
 
-faltantes = [
-    nombre for nombre, valor in {
-        "ANALYTICS_MONGO_USER": user,
-        "ANALYTICS_MONGO_PASSWORD": password_raw,
-        "ANALYTICS_MONGO_CLUSTER": cluster,
-        "ANALYTICS_MONGO_DB": database,
-    }.items() if not valor
-]
-if faltantes:
-    raise ValueError(
-        "Faltan variables en el archivo .env: " + ", ".join(faltantes) + ". "
-        "El generador escribe con la conexion de ANALYTICS; no uses MONGO_USER."
-    )
 
-# Segunda barrera, independiente de las credenciales: aunque alguien apunte
-# ANALYTICS_MONGO_DB a barber_db por error, el script se niega a escribir.
-core_database = os.getenv("MONGO_DB")
-if database == core_database:
-    raise RuntimeError(
-        "ANALYTICS_MONGO_DB no puede ser la base del core (MONGO_DB): este script "
-        "solo escribe datos sinteticos en la base de derivados analiticos."
-    )
+SERVICES = {"Corte Clásico": 150, "Corte Fade": 200, "Barba": 100, "Corte + Barba": 250, "Tintura": 400}
 
-mongo_uri = f"mongodb+srv://{user}:{quote_plus(password_raw)}@{cluster}"
-client    = MongoClient(mongo_uri)
 
-try:
-    client.admin.command("ping")
-    print("Conexión exitosa a MongoDB Atlas")
-except Exception as e:
-    raise ConnectionError(f"Error al conectar con MongoDB: {e}")
+def generate_records(count=2000, seed=42):
+    if not 1 <= count <= 100000:
+        raise ValueError("El conteo debe estar entre 1 y 100000.")
+    # Fixtures deterministas a partir de una semilla pública; no genera tokens,
+    # contraseñas, identificadores de autenticación ni datos de clientes reales.
+    def sample(index, field, modulo):
+        digest = sha256(f"{seed}:{index}:{field}".encode("utf-8")).digest()
+        return int.from_bytes(digest[:8], "big") % modulo
 
-db        = client[database]
-coleccion = db[coll]
+    services = list(SERVICES)
+    records = []
+    for index in range(count):
+        service = services[sample(index, "service", len(services))]
+        status = sample(index, "status", 100)
+        records.append({
+            "servicio": service,
+            "barbero": ["Sintético A", "Sintético B", "Sintético C"][sample(index, "barber", 3)],
+            "cantidad": 1 + sample(index, "quantity", 3),
+            "precio": SERVICES[service] - 20 + sample(index, "price", 71),
+            "estado": "completada" if status < 70 else "cancelada" if status < 90 else "pendiente",
+            "synthetic": True,
+        })
+    return records
 
-servicios = ["Corte Clásico", "Corte Fade", "Barba", "Corte + Barba", "Tintura"]
-barberos  = ["Carlos", "Miguel", "Andrés", "Javier"]
-estados   = ["completada", "cancelada", "pendiente"]
 
-precio_base = {
-    "Corte Clásico": 150,
-    "Corte Fade":    200,
-    "Barba":         100,
-    "Corte + Barba": 250,
-    "Tintura":       400
-}
 
-citas = []
-for _ in range(2000):
-    servicio = random.choice(servicios)
-    cita = {
-        "servicio": servicio,
-        "barbero":  random.choice(barberos),
-        "cantidad": random.randint(1, 3),
-        "precio":   precio_base[servicio] + random.randint(-20, 50),
-        "estado":   random.choices(estados, weights=[70, 20, 10])[0]
-    }
-    citas.append(cita)
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--count", type=int, default=2000)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--apply", action="store_true", help="Escribir solo appointments_synthetic en derivados.")
+    parser.add_argument("--env-file", help="Archivo privado de configuración.")
+    args = parser.parse_args(argv)
+    records = generate_records(args.count, args.seed)
+    if not args.apply:
+        print(json.dumps({"records": len(records), "seed": args.seed, "written": False}))
+        return 0
+    load_environment(args.env_file)
+    require_write_opt_in("ALLOW_SYNTHETIC_WRITES")
+    coll = os.getenv("MONGO_COLLECTION_SYNTHETIC", "appointments_synthetic")
+    if coll != "appointments_synthetic":
+        raise ValueError("El generador solo admite la colección sintética dedicada.")
+    client, database = connect_mongo(analytics=True)
+    try:
+        coleccion = client[database][coll]
+        coleccion.insert_many(records, ordered=True)
+        for field in ("servicio", "barbero", "precio"):
+            coleccion.create_index(field)
+    finally:
+        client.close()
+    print(json.dumps({"records": len(records), "written": True}))
+    return 0
 
-resultado = coleccion.insert_many(citas)
 
-coleccion.create_index("servicio")
-coleccion.create_index("barbero")
-coleccion.create_index("precio")
-
-print(f"{len(resultado.inserted_ids)} citas insertadas correctamente en '{coll}'")
-client.close()
+if __name__ == "__main__":
+    raise SystemExit(main())
