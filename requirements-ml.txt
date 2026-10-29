@@ -1,12 +1,12 @@
 # Entrenamiento opcional; instalar solo en el entorno de modelado.
 scikit-learn==1.9.1
-scipy==1.15.3
+scipy==1.17.1
 statsmodels==0.15.0
 torch==2.15.0
 tensorflow==2.21.0
 xgboost==3.4.1
 lightgbm==4.7.0
-matplotlib==3.10.8
+matplotlib==3.11.2
 seaborn==0.13.2
 joblib==1.6.0
 python-dateutil==3.0.0
