@@ -1,0 +1,26 @@
+name: Reportar un fallo
+description: Problemas reproducibles de analítica, modelos o dashboard.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: "No publiques credenciales, URI, tokens ni datos de clientes. Para vulnerabilidades usa el canal privado de SECURITY.md."
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema y resultado esperado
+      description: Indica qué ocurre y qué debería ocurrir.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Pasos y datos sintéticos para reproducir
+      description: Incluye comando, módulo o sección afectada, sin acceso a producción.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Entorno y evidencia depurada
+      description: Commit, Python, Java, perfil de dependencias y error sin información privada.

@@ -51,16 +51,13 @@ Equipo: Equipo UrbanBlade
 import sys
 import os
 import json
-from pathlib import Path
-from urllib.parse import quote_plus
+import math
 from datetime import datetime
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType
 from pyspark.ml.feature import VectorAssembler
-from pymongo import MongoClient
-from dotenv import load_dotenv
 import pandas as pd
 import numpy as np
 
@@ -127,11 +124,13 @@ RAW_SCHEMA = StructType([
 def _num(v, default=0.0):
     """Convierte a float valores numéricos de Mongo, incluyendo BSON Decimal128
     (usado en `products.precio_compra/precio_venta`, no soportado por float() directo)."""
-    if v is None:
+    if v is None or isinstance(v, bool):
         return default
-    if hasattr(v, "to_decimal"):   # bson.decimal128.Decimal128
-        return float(v.to_decimal())
-    return float(v)
+    try:
+        value = float(v.to_decimal() if hasattr(v, "to_decimal") else v)
+    except (ValueError, TypeError, OverflowError):
+        return default
+    return value if math.isfinite(value) else default
 
 
 def _to_dt(v):
@@ -213,7 +212,7 @@ def _build_maps(db):
     }
     users_map = {
         str(u["_id"]): u
-        for u in db["users"].find({}, {"_id": 1, "name": 1, "email": 1})
+        for u in db["users"].find({}, {"_id": 1, "name": 1})
     }
     return services_map, barbers_map, clients_map, users_map
 
@@ -303,49 +302,15 @@ def _extract_records(db):
 # Sesión Spark + DataFrame enriquecido (API pública, compatible)
 # ─────────────────────────────────────────────────────────────────────────────
 def _connect_db():
-    env_path = Path(__file__).resolve().parent.parent / ".env"
-    load_dotenv(dotenv_path=env_path)
-    explicit_uri = os.getenv("CORE_MONGODB_URI")
-    user     = os.getenv("MONGO_USER")
-    password_raw = os.getenv("MONGO_PASSWORD")
-    cluster  = os.getenv("MONGO_CLUSTER")
-    database = os.getenv("MONGO_DB")
-    if not explicit_uri and not all([user, password_raw, cluster]):
-        raise RuntimeError(
-            "Configura CORE_MONGODB_URI para local o MONGO_USER, "
-            "MONGO_PASSWORD y MONGO_CLUSTER para Atlas."
-        )
-    uri = explicit_uri or f"mongodb+srv://{user}:{quote_plus(password_raw)}@{cluster}"
-    return MongoClient(uri), database
+    """Conexión operativa: credenciales de lectura y configuración validada."""
+    from config.settings import connect_mongo
+    return connect_mongo(analytics=False)
 
 
 def _connect_analytics_db():
-    """Conexión de escritura limitada a la base de derivados analíticos."""
-    env_path = Path(__file__).resolve().parent.parent / ".env"
-    load_dotenv(dotenv_path=env_path)
-    explicit_uri = os.getenv("ANALYTICS_MONGODB_URI")
-    user = os.getenv("ANALYTICS_MONGO_USER")
-    password_raw = os.getenv("ANALYTICS_MONGO_PASSWORD")
-    cluster = os.getenv("ANALYTICS_MONGO_CLUSTER")
-    database = os.getenv("ANALYTICS_MONGO_DB")
-
-    missing = [
-        name for name, value in {
-            "ANALYTICS_MONGO_USER": user,
-            "ANALYTICS_MONGO_PASSWORD": password_raw,
-            "ANALYTICS_MONGO_CLUSTER": cluster,
-            "ANALYTICS_MONGO_DB": database,
-        }.items() if not value
-    ]
-    if not explicit_uri and missing:
-        raise RuntimeError(
-            "Faltan variables de la conexión analytics: " + ", ".join(missing)
-        )
-    if database == os.getenv("MONGO_DB"):
-        raise RuntimeError("ANALYTICS_MONGO_DB debe ser distinta de MONGO_DB.")
-
-    uri = explicit_uri or f"mongodb+srv://{user}:{quote_plus(password_raw)}@{cluster}"
-    return MongoClient(uri), database
+    """Conexión de derivados, separada de la base operativa."""
+    from config.settings import connect_mongo
+    return connect_mongo(analytics=True)
 
 
 # Acceso al dashboard: vive en config/barber_auth.py y se reexporta aqui para no
@@ -602,7 +567,7 @@ def get_forecast_df(pdf: pd.DataFrame, semanas_adelante: int = 4, minimo_semanas
                 "fecha": fechas_fut,
                 "valor": np.clip(y_fut, 0, None),
                 "min": np.clip(y_fut - banda, 0, None),
-                "max": y_fut + banda,
+                "max": np.clip(y_fut + banda, 0, None),
             }),
             "r2": r2,
             "tendencia_semanal": round(float(pendiente), 2),

@@ -1,22 +1,17 @@
 ---
 name: urbanblade-data-architecture
-description: Aplica la arquitectura y gobernanza de datos al cambiar conectores, lecturas, escrituras, exportaciones o contenedores del proyecto Spark de UrbanBlade.
+description: Separación de datos operativos y derivados al mantener UrbanBlade Analytics.
 ---
 
-# Arquitectura de datos de UrbanBlade
+# Arquitectura de datos
 
-Lee `../barber/docs/ADR-001-ARQUITECTURA-DE-DATOS.md`. El ADR está **Propuesto** y no
-autoriza migraciones ni cambios de infraestructura.
+El ADR aceptado de referencia está en barber/docs/referencia/ADR-001-ARQUITECTURA-DE-DATOS.md
+(repo hermano), no en la ruta antigua docs/ADR-001-ARQUITECTURA-DE-DATOS.md.
+La guía propia del componente es docs/arquitectura.md.
 
-- Spark no es fuente de verdad operativa: lee la base core con credenciales de solo
-  lectura.
-- Su única escritura remota permitida son derivados reconstruibles en
-  `urbanblade_analytics`, comenzando por `analytics_insights`, con credenciales distintas.
-- No escribas ni borres `users`, `clients`, `barbers`, `services`, `appointments`,
-  `payments`, inventario, pedidos o cualquier otra colección operativa.
-- Prueba conectores y exportaciones primero con bases locales/sintéticas. No copies PII
-  a artefactos o logs.
-- Una migración requiere backup, conteos, verificación, corte reversible y conservación
-  temporal del origen.
-- Ninguna IA ejecuta `git commit`, `git push`, merge, rebase ni publica PR. Entrega al
-  usuario el resumen, validaciones y mensaje de commit sugerido en español.
+- Core solo lectura; nunca publicar o generar datos en colecciones operativas.
+- Derivados reconstruibles con base y credenciales separadas.
+- Pruebas con mocks o Mongo local aislado terminado en _e2e; nunca fixtures sobre Atlas.
+- No imprimir .env, URI, credenciales ni PII. Verificar privilegios sin consultar registros.
+- Una migración o escritura real necesita autorización específica y recuperación revisada.
+- Conservar trabajo ajeno y usar el flujo Git vigente; ninguna edición despliega servicios.

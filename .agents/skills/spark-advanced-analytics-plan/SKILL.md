@@ -11,6 +11,12 @@ cuales aplicar aqui. No es trabajo escolar — el dashboard ya se trata como pro
 negocio real (ver identidad UrbanBlade, control de acceso, despliegue en Docker ya
 implementados).
 
+> Los estados completados siguientes son antecedentes históricos. Esta migración
+> no repite ni certifica las validaciones reales de esas fechas. Para tareas
+> nuevas rigen CLAUDE.md, docs/modelos.md y los límites de acceso actuales.
+> Crear cuentas o escribir datos requiere autorización específica; no es parte
+> automática de una prueba.
+
 ## Flujo de trabajo (repetir por cada fase, sin excepciones)
 
 1. Implementar la fase completa (conector + UI + lo que haga falta).
@@ -19,7 +25,7 @@ implementados).
    que la fase funciona con `barber_db` real, revisar que no rompio nada existente.
 3. Si todo sale bien: marcar la fase como `✅ Completada` en este archivo (con fecha) y
    entregar al usuario resumen + archivos afectados + pruebas + mensaje de commit
-   sugerido (ver `git-commit-conventions` — ninguna IA hace commit/push).
+   sugerido (ver `git-commit-conventions`: rama + PR, commit/push solo con autorización).
 4. Si algo sale mal: NO marcarla como completada, arreglar primero, repetir el paso 2.
 5. Solo entonces continuar con la fase siguiente. No adelantar trabajo de una fase
    futura mientras la actual no este marcada como completada.
@@ -151,7 +157,7 @@ No se automatizo la deteccion de "por que" paso un pico — requeriria datos que
 se capturan (promociones, feriados, etc.), consistente con "por ahora manual".
 
 Sin cambios en `config/mongo_spark_conexion_sinnulos.py` — todo esto es presentacion
-sobre datos ya cargados (`unidades/unidad_5_visualizacion/main_dashboard.py`).
+sobre datos ya cargados (`dashboard/app.py`).
 
 Probado con datos reales en Docker: metrica norte muestra $19,590 (Ingreso Real)
 destacada; barras horizontales de estados renderizan ordenadas de mayor a menor: cero

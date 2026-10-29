@@ -1,0 +1,22 @@
+name: Proponer una mejora
+description: Necesidades de negocio, modelos y calidad del producto.
+title: "[Mejora] "
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: Necesidad y personas beneficiadas
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Resultado verificable
+      description: Describe los criterios de aceptación y cómo probarlos con datos sintéticos.
+    validations:
+      required: true
+  - type: textarea
+    id: data
+    attributes:
+      label: Datos y dependencias
+      description: Indica si requiere nuevos datos, cambios en Barber o permisos; no adjuntes registros reales.

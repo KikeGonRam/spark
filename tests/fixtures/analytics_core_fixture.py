@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from bson import ObjectId
 from pymongo import MongoClient
+from config.settings import validate_local_test_target
 
 
 def main():
@@ -14,6 +15,7 @@ def main():
     if not database.endswith("_e2e"):
         raise RuntimeError("La base temporal debe terminar en _e2e")
 
+    validate_local_test_target(uri, database)
     client = MongoClient(uri)
     if action == "drop":
         client.drop_database(database)
