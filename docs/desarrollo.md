@@ -113,3 +113,16 @@ el servidor y el kernel del runner sean compatibles.
 
 Fuentes: [compatibilidad de MongoDB](https://www.mongodb.com/docs/manual/release-notes/8.0/)
 y [imagen oficial del runner](https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2204-Readme.md).
+
+## Actualizaciones del perfil opcional de modelos
+
+Los checks del dashboard no prueban por sí solos los frameworks de entrenamiento.
+Para actualizar SciPy, Matplotlib u otro componente opcional, comprobar la resolución
+completa con las restricciones de requirements-dashboard.txt, sin actualizar NumPy
+implícitamente. Además, probar las interfaces afectadas en un entorno desechable.
+
+La actualización SciPy 1.17.1 / Matplotlib 3.11.2 se comprobó con NumPy 1.26.4:
+resolución del perfil completo, solución de un sistema lineal, fit/predict de un
+Random Forest sobre datos sintéticos y render PNG con backend Agg. pip check no
+detectó conflictos. Esto no equivale a entrenar o validar los modelos del negocio,
+ni prueba la ejecución completa de PyTorch/TensorFlow.
