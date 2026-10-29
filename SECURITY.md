@@ -2,10 +2,10 @@
 
 ## Reportar en privado
 
-Usar el [canal privado del equipo UrbanBlade](https://github.com/KikeGonRam/spark/security/advisories/new)
+Usar el [canal privado de seguridad de Spark](https://github.com/KikeGonRam/spark/security/advisories/new)
 e indicar componente spark y commit. No publicar secretos, PII, tokens, URI ni
-exploits en issues. El canal compartido no presupone un formulario propio habilitado
-en este repositorio. No se promete plazo de respuesta, recompensa o soporte no acordado.
+exploits en issues. Los reportes privados están habilitados en este repositorio.
+No se promete plazo de respuesta, recompensa o soporte no acordado.
 
 ## Datos y credenciales
 
