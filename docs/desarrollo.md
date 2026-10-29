@@ -72,9 +72,19 @@ publicación está bloqueada sin --publish y la habilitación correspondiente.
 
 ## Dependencias y calidad
 
-Las versiones directas se fijan; los manifiestos no son un lock completo con hashes
-de todas las transitivas. Revisar pip check y auditoría de la resolución real. La
-imagen de runtime no instala herramientas de entrenamiento o CI innecesarias.
+Las versiones directas se fijan en los perfiles .txt. CI y Docker instalan sus
+resoluciones completas .lock con --require-hashes y binarios precompilados.
+PySpark 3.5 se publica como fuente: es la única excepción (--no-binary=pyspark),
+con hash de origen fijado. No se permite ejecutar builds de fuente de otros paquetes.
+El hash comprueba integridad respecto al artefacto revisado; no sustituye su revisión.
+
+Para actualizar, resolver el perfil en un entorno limpio de Python 3.12, ejecutar
+pip check y pruebas, exportar `python -m pip freeze --all` a un archivo privado y
+usar `python scripts/lock_dependencies.py --freeze-file RUTA --output requirements-ci.lock`
+(o requirements-dashboard.lock para el runtime). El generador consulta hashes de
+PyPI, no instala ni decide versiones. Revisar diff, instalar de nuevo con hashes y
+auditar la resolución. La imagen no instala herramientas opcionales de entrenamiento.
+
 Dependabot propone PR para pip, Actions e imágenes; no hay automerge. Los saltos
 mayores de Spark, pandas y NumPy están reservados para una migración explícita.
 
@@ -89,3 +99,14 @@ o la configuración efectiva de Atlas.
 Preparar rama, diff, pruebas y evidencia. Commit/push/PR requieren la orden del
 propietario para el cambio. No desplegar Spark por fusionar un PR. Ver
 [contribución](../CONTRIBUTING.md) y [migración](migracion.md).
+
+## Compatibilidad del runner de Mongo
+
+El job de integración usa ubuntu-22.04 (kernel 6.8 en la imagen verificada) porque
+Mongo 8.0.34 detiene el arranque en kernels incompatibles. No se omite el chequeo
+de arranque ni se sustituye la prueba por Atlas. El job de Spark permanece en
+ubuntu-24.04. Revisar esta elección antes del retiro del runner 22.04 y migrar cuando
+el servidor y el kernel del runner sean compatibles.
+
+Fuentes: [compatibilidad de MongoDB](https://www.mongodb.com/docs/manual/release-notes/8.0/)
+y [imagen oficial del runner](https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2204-Readme.md).

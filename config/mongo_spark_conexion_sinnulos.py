@@ -567,7 +567,7 @@ def get_forecast_df(pdf: pd.DataFrame, semanas_adelante: int = 4, minimo_semanas
                 "fecha": fechas_fut,
                 "valor": np.clip(y_fut, 0, None),
                 "min": np.clip(y_fut - banda, 0, None),
-                "max": y_fut + banda,
+                "max": np.clip(y_fut + banda, 0, None),
             }),
             "r2": r2,
             "tendencia_semanal": round(float(pendiente), 2),

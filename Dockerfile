@@ -15,10 +15,10 @@ RUN apt-get update \
     && useradd --uid 10001 --gid analytics --create-home analytics
 
 WORKDIR /app
-COPY requirements-dashboard.txt ./
+COPY requirements-dashboard.txt requirements-dashboard.lock ./
 RUN --mount=type=cache,target=/root/.cache/pip \
-    PIP_CACHE_DIR=/root/.cache/pip pip install --timeout 180 --retries 8 --index-url https://pypi.org/simple -r requirements-dashboard.txt
-RUN python -m pip install --no-cache-dir --index-url https://pypi.org/simple --upgrade pip==26.2.2
+    PIP_CACHE_DIR=/root/.cache/pip pip install --only-binary=:all: --no-binary=pyspark --require-hashes --timeout 180 --retries 8 --index-url https://pypi.org/simple -r requirements-dashboard.lock
+RUN python -m pip install --only-binary=:all: --no-cache-dir --index-url https://pypi.org/simple --upgrade pip==26.2.2
 
 COPY --chown=analytics:analytics config/ ./config/
 COPY --chown=analytics:analytics dashboard/ ./dashboard/

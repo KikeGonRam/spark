@@ -72,6 +72,41 @@ class SparkRuntimeTest(unittest.TestCase):
         self.assertEqual(result[0]["cliente"], "Cliente sintético")
         self.assertEqual(result[0]["barbero"], "Barbero sintético")
 
+    def test_declining_forecast_has_ordered_nonnegative_intervals(self):
+        import pandas as pd
+        rows = [{"fecha": (pd.Timestamp("2026-01-04") + pd.Timedelta(weeks=week)).isoformat(),
+                 "estado": "completada", "ingreso": 10.0}
+                for week in range(8) for _ in range(8 - week)]
+        result = self.data.get_forecast_df(pd.DataFrame(rows))
+        for metric in ("citas", "ingreso"):
+            projection = result[metric]["proyeccion"]
+            self.assertTrue((projection["min"] >= 0).all())
+            self.assertTrue((projection["min"] <= projection["valor"]).all())
+            self.assertTrue((projection["valor"] <= projection["max"]).all())
+            self.assertTrue((projection["fecha"] > result[metric]["historico"]["fecha"].max()).all())
+
+    def test_forecast_excludes_cancelled_income_and_requires_history(self):
+        import pandas as pd
+        rows = [{"fecha": (pd.Timestamp("2026-01-04") + pd.Timedelta(weeks=week)).isoformat(),
+                 "estado": state, "ingreso": income}
+                for week in range(6) for state, income in (("completada", 10.0), ("cancelada", 999.0))]
+        frame = pd.DataFrame(rows)
+        result = self.data.get_forecast_df(frame)
+        self.assertEqual(result["ingreso"]["historico"]["valor"].sum(), 60.0)
+        self.assertEqual(result["citas"]["historico"]["valor"].sum(), 12.0)
+        self.assertIsNone(self.data.get_forecast_df(frame.iloc[:2]))
+
+    def test_cohorts_count_unique_clients_without_mutating_input(self):
+        import pandas as pd
+        frame = pd.DataFrame({"client_id": ["a", "a", "b", "a", "c"],
+                              "fecha": ["2026-01-01", "2026-01-02", "2026-01-03", "2026-02-01", "2026-02-05"]})
+        original = frame.copy(deep=True)
+        result = self.data.get_cohortes_df(frame)
+        january = result[result["cohorte"] == "2026-01"].set_index("mes_desde_cohorte")
+        self.assertEqual(january.loc[0, "tamano_cohorte"], 2)
+        self.assertEqual(january.loc[1, "retencion_pct"], 50.0)
+        pd.testing.assert_frame_equal(frame, original)
+
     def test_login_screen_renders_without_reading_mongo(self):
         from streamlit.testing.v1 import AppTest
         with patch.object(self.data, "_connect_db") as connection:

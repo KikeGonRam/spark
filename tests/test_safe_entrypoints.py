@@ -27,7 +27,9 @@ class SafeEntrypointTest(unittest.TestCase):
             client.assert_not_called()
 
     def test_synthetic_generation_is_reproducible_and_dry_by_default(self):
-        self.assertEqual(synthetic.generate_records(5, 7), synthetic.generate_records(5, 7))
+        expected = synthetic.generate_records(5, 7)
+        self.assertEqual(expected, synthetic.generate_records(5, 7))
+        self.assertNotEqual(expected, synthetic.generate_records(5, 8))
         with patch.object(synthetic, 'connect_mongo') as client:
             with contextlib.redirect_stdout(io.StringIO()) as output:
                 self.assertEqual(synthetic.main(['--count', '5']), 0)
