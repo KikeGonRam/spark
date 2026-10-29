@@ -79,9 +79,12 @@ con hash de origen fijado. No se permite ejecutar builds de fuente de otros paqu
 El hash comprueba integridad respecto al artefacto revisado; no sustituye su revisión.
 
 Para actualizar, resolver el perfil en un entorno limpio de Python 3.12, ejecutar
-pip check y pruebas, exportar `python -m pip freeze --all` a un archivo privado y
-usar `python scripts/lock_dependencies.py --freeze-file RUTA --output requirements-ci.lock`
-(o requirements-dashboard.lock para el runtime). El generador consulta hashes de
+pip check y pruebas, exportar `python -m pip freeze --all` a `.dependency-locks/ci.freeze`
+(o dashboard.freeze para el runtime) y usar
+`python scripts/lock_dependencies.py --profile ci` (o --profile dashboard).
+La carpeta de entradas está ignorada y el CLI solo permite estas rutas fijas.
+El perfil dashboard también genera pylock.toml (PEP 751) para Linux x86_64/Python 3.12,
+con los mismos paquetes y artefactos de PyPI. El generador consulta hashes de
 PyPI, no instala ni decide versiones. Revisar diff, instalar de nuevo con hashes y
 auditar la resolución. La imagen no instala herramientas opcionales de entrenamiento.
 

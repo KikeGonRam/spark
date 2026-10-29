@@ -2,7 +2,7 @@
 
 ## Reportar en privado
 
-Usar el [canal privado del equipo UrbanBlade](https://github.com/KikeGonRam/barber/security/advisories/new)
+Usar el [canal privado del equipo UrbanBlade](https://github.com/KikeGonRam/spark/security/advisories/new)
 e indicar componente spark y commit. No publicar secretos, PII, tokens, URI ni
 exploits en issues. El canal compartido no presupone un formulario propio habilitado
 en este repositorio. No se promete plazo de respuesta, recompensa o soporte no acordado.

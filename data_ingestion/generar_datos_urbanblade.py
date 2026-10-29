@@ -3,7 +3,7 @@
 import argparse
 import json
 import os
-import random
+from hashlib import sha256
 import sys
 from pathlib import Path
 
@@ -18,18 +18,27 @@ SERVICES = {"Corte Clásico": 150, "Corte Fade": 200, "Barba": 100, "Corte + Bar
 def generate_records(count=2000, seed=42):
     if not 1 <= count <= 100000:
         raise ValueError("El conteo debe estar entre 1 y 100000.")
-    rng = random.Random(seed)
-    return [
-        {
+    # Fixtures deterministas a partir de una semilla pública; no genera tokens,
+    # contraseñas, identificadores de autenticación ni datos de clientes reales.
+    def sample(index, field, modulo):
+        digest = sha256(f"{seed}:{index}:{field}".encode("utf-8")).digest()
+        return int.from_bytes(digest[:8], "big") % modulo
+
+    services = list(SERVICES)
+    records = []
+    for index in range(count):
+        service = services[sample(index, "service", len(services))]
+        status = sample(index, "status", 100)
+        records.append({
             "servicio": service,
-            "barbero": rng.choice(["Sintético A", "Sintético B", "Sintético C"]),
-            "cantidad": rng.randint(1, 3),
-            "precio": SERVICES[service] + rng.randint(-20, 50),
-            "estado": rng.choices(["completada", "cancelada", "pendiente"], weights=[70, 20, 10])[0],
+            "barbero": ["Sintético A", "Sintético B", "Sintético C"][sample(index, "barber", 3)],
+            "cantidad": 1 + sample(index, "quantity", 3),
+            "precio": SERVICES[service] - 20 + sample(index, "price", 71),
+            "estado": "completada" if status < 70 else "cancelada" if status < 90 else "pendiente",
             "synthetic": True,
-        }
-        for service in (rng.choice(list(SERVICES)) for _ in range(count))
-    ]
+        })
+    return records
+
 
 
 def main(argv=None):
