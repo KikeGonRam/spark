@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
   - name: Reportar una vulnerabilidad en privado
-    url: https://github.com/KikeGonRam/barber/security/advisories/new
-    about: Usa el canal de seguridad compartido de UrbanBlade; no publiques secretos en issues.
+    url: https://github.com/KikeGonRam/spark/security/advisories/new
+    about: Usa el canal privado de seguridad de Spark; no publiques secretos en issues.

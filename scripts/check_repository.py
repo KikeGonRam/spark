@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tomllib
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -53,6 +54,14 @@ def main():
                 name, version = line.strip().split('==', 1)
                 if pinned.get(name.lower().replace('_', '-').replace('.', '-')) != version:
                     invalid.append(str(lock.relative_to(ROOT)) + ': resolución desactualizada para ' + name)
+    pylock = ROOT / 'pylock.toml'
+    if not pylock.is_file():
+        missing.append('pylock.toml')
+    else:
+        manifest = tomllib.loads(pylock.read_text(encoding='utf-8'))
+        standard_pins = {package['name']: package['version'] for package in manifest['packages']}
+        if standard_pins != pinned:
+            invalid.append('pylock.toml: no coincide con la resolución completa del dashboard')
     documents = list(ROOT.glob('*.md')) + list((ROOT / 'docs').rglob('*.md'))
     for document in documents:
         for target in re.findall(r'\]\(([^)]+)\)', document.read_text(encoding='utf-8')):

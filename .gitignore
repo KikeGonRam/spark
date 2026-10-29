@@ -28,3 +28,6 @@ htmlcov/
 *.egg-info/
 build/
 dist/
+
+# Entradas locales revisadas para regenerar locks
+.dependency-locks/
