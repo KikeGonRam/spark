@@ -14,7 +14,7 @@ de solo lectura.
 
 Esta prueba existe porque `barber_db` se comparte con la app Laravel y ya se perdió
 información real una vez (ver
-`unidades/unidad_6_caso_aplicado_laravel/01_diagnostico_incidente.md`).
+`docs/postmortems/01_diagnostico_incidente.md`).
 
 La detección usa el AST de Python, no expresiones regulares: así `rename(columns=…)`
 de pandas o `.drop("columna")` de Spark no se confunden con una escritura en Mongo.
@@ -76,7 +76,7 @@ ESCRITORES_AUTORIZADOS = {
 }
 
 # Directorios que no forman parte del código entregable.
-DIRECTORIOS_IGNORADOS = {"data", "__pycache__", ".pytest_cache", ".git", ".venv"}
+DIRECTORIOS_IGNORADOS = {"data", "__pycache__", ".pytest_cache", ".git", ".venv", "venv", "build", "dist"}
 
 
 def _es_nombre_mongo(nombre):
@@ -186,7 +186,7 @@ class GuardaSoloLecturaTest(unittest.TestCase):
 
     def test_ningun_script_de_analisis_escribe(self):
         infracciones = []
-        for ruta in sorted((RAIZ / "unidades").rglob("*.py")):
+        for ruta in sorted(p for directory in ("analytics", "dashboard", "pipelines") for p in (RAIZ / directory).rglob("*.py")):
             hallazgos = escanear_fuente(
                 ruta.read_text(encoding="utf-8"),
                 ruta.relative_to(RAIZ).as_posix(),
@@ -196,11 +196,11 @@ class GuardaSoloLecturaTest(unittest.TestCase):
         self.assertEqual(
             [],
             infracciones,
-            f"Los scripts de las unidades son de solo lectura: {infracciones}",
+            f"Los scripts analíticos son de solo lectura: {infracciones}",
         )
 
     def test_el_exportador_delega_en_el_publicador_atomico(self):
-        ruta = RAIZ / "unidades/unidad_5_visualizacion/exportar_insights_dashboard.py"
+        ruta = RAIZ / "pipelines/publicar_insights.py"
         codigo = ruta.read_text(encoding="utf-8")
         arbol = ast.parse(codigo)
 
@@ -283,39 +283,16 @@ class GuardaSoloLecturaTest(unittest.TestCase):
         )
 
     def test_el_generador_escribe_con_las_credenciales_de_analytics(self):
-        """El generador no puede usar las credenciales del core.
-
-        Verificado contra Atlas el 2026-10-02: el usuario de MONGO_USER tiene rol
-        `read` sobre barber_db y NINGUNA acción de escritura. Un script que
-        escriba con esas credenciales no funciona (el servidor lo rechaza), y
-        encima es la vía por la que un generador de datos de prueba podría
-        intentar tocar la base real. Debe usar la conexión de ANALYTICS.
-        """
-        ruta = RAIZ / "data_ingestion/generar_datos_urbanblade.py"
-        usadas = _variables_de_entorno(ruta.read_text(encoding="utf-8"))
-
-        for requerida in (
-            "ANALYTICS_MONGO_USER",
-            "ANALYTICS_MONGO_PASSWORD",
-            "ANALYTICS_MONGO_CLUSTER",
-            "ANALYTICS_MONGO_DB",
-        ):
-            self.assertIn(
-                requerida,
-                usadas,
-                f"El generador debe leer {requerida} para escribir en la base de "
-                "derivados, no en la del core.",
-            )
-
-        # MONGO_DB solo puede aparecer para compararlo y negarse a escribir ahí.
-        for prohibida in ("MONGO_USER", "MONGO_PASSWORD", "MONGO_CLUSTER"):
-            self.assertNotIn(
-                prohibida,
-                usadas,
-                f"El generador no debe usar {prohibida}: son las credenciales de "
-                "lectura del core.",
-            )
-        self.assertIn("MONGO_DB", usadas)
+        codigo = (RAIZ / "data_ingestion/generar_datos_urbanblade.py").read_text(encoding="utf-8")
+        arbol = ast.parse(codigo)
+        conexiones = [n for n in ast.walk(arbol) if isinstance(n, ast.Call)
+                      and isinstance(n.func, ast.Name) and n.func.id == "connect_mongo"]
+        self.assertEqual(len(conexiones), 1)
+        self.assertTrue(any(k.arg == "analytics" and isinstance(k.value, ast.Constant)
+                            and k.value.value is True for k in conexiones[0].keywords))
+        self.assertIn('require_write_opt_in("ALLOW_SYNTHETIC_WRITES")', codigo)
+        self.assertNotIn("MongoClient(", codigo)
+        self.assertTrue(all((RAIZ / directory).is_dir() for directory in ("analytics", "dashboard", "pipelines")))
 
 
 class DetectorTest(unittest.TestCase):

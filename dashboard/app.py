@@ -1,0 +1,2338 @@
+"""
+Dashboard Principal – UrbanBlade Analytics
+Panel de inteligencia de negocio sobre datos reales de barber_db (MongoDB Atlas).
+Equipo: Equipo UrbanBlade
+
+Ejecutar:  streamlit run dashboard/app.py
+"""
+import sys
+import os
+_ROOT = os.path.abspath(__file__)
+while _ROOT != os.path.dirname(_ROOT) and not os.path.isdir(os.path.join(_ROOT, "config")):
+    _ROOT = os.path.dirname(_ROOT)
+sys.path.insert(0, _ROOT)
+
+import streamlit as st
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import pandas as pd
+import numpy as np
+
+from config.mongo_spark_conexion_sinnulos import (
+    FEATURES_CANCEL, DIAS_SEMANA, MESES, get_clientes_df,
+    get_pagos_df, get_loyalty_df, get_horarios_df, get_utilizacion_barberos_df,
+    get_productos_df, get_pedidos_df, get_top_productos_df, get_publicaciones_df,
+    PAGO_ESTADO_VERIFICADO,
+    get_giftcards_df, get_paquetes_df, get_combos_df,
+    get_membresias_df, get_membership_invoices_df,
+    get_referidos_df, get_rifas_df, get_waitlist_df,
+    get_comisiones_df, get_resenas_df,
+    autenticar_usuario, google_login_url, verificar_google_token,
+    LoginBloqueado, ApiNoDisponible,
+    get_cohortes_df, get_clv_df, get_forecast_df, get_anomalias_df,
+)
+
+# Nombre de presentación por rol real de `barber` — solo para lo que se
+# muestra en spark, sin renombrar el rol "ingeniero" en la base de datos
+# (eso implica tocar barber + frontend-urban, ver ROLES_AUTORIZADOS en config/barber_auth.py).
+_NOMBRE_ROL = {"administrador": "Administrador", "ingeniero": "Analista"}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONFIGURACIÓN
+# ─────────────────────────────────────────────────────────────────────────────
+_ASSETS = os.path.join(os.path.dirname(__file__), "assets")
+_LOGO_PATH = os.path.join(_ASSETS, "urbanblade-mark.png")
+_BRUNO_PATH = os.path.join(_ASSETS, "bruno-raven.png")
+_NAVA_EMPTY_PATH = os.path.join(_ASSETS, "nava-empty.webp")
+
+st.set_page_config(
+    page_title="UrbanBlade Analytics",
+    page_icon=_LOGO_PATH,
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+GOLD   = "#d4af37"
+DARK   = "#0e0e0e"
+CARD   = "#1a1a1a"
+GREEN  = "#2ecc71"
+RED    = "#e74c3c"
+BLUE   = "#3498db"
+PURPLE = "#9b59b6"
+
+st.markdown("""
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+""", unsafe_allow_html=True)
+
+st.markdown(f"""
+<style>
+  [data-testid="stAppViewContainer"] {{ background-color: {DARK}; }}
+  [data-testid="stSidebar"]          {{ background-color: #111; }}
+  h1, h2, h3, h4                     {{ color: {GOLD}; }}
+  .stMetric label                    {{ color: #aaa !important; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }}
+  .stMetric [data-testid="stMetricValue"] {{ color: white !important; font-size: 1.6rem; font-weight: 900; }}
+  .stTabs [data-baseweb="tab"]        {{ color: #888; font-weight: 700; font-size: 13px; }}
+  .stTabs [aria-selected="true"]      {{ color: {GOLD} !important; border-bottom: 2px solid {GOLD}; }}
+  div[data-testid="stHorizontalBlock"] > div {{ border-radius: 12px; }}
+  .block-container {{ padding-top: 1.5rem; }}
+
+  /* Identidad de sidebar — mismo lenguaje visual que los correos de barber
+     (resources/views/vendor/mail/html/themes/barberpro.css): tarjetas
+     oscuras con borde sutil, esquinas redondeadas, acentos dorados y
+     etiquetas en mayusculas con tracking. */
+  [data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"] {{
+      background-color: #1a1a1a;
+      border: 1px solid #2a2a2a !important;
+      border-radius: 14px !important;
+  }}
+  .ub-eyebrow {{
+      color: #8a8a8a; font-size: 10px; font-weight: 800;
+      text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 4px;
+  }}
+  .ub-role-badge {{
+      display: inline-block; background-color: rgba(212,175,55,0.15); color: {GOLD};
+      font-size: 10px; font-weight: 800; text-transform: uppercase;
+      letter-spacing: 0.08em; padding: 3px 10px; border-radius: 999px; margin-top: 4px;
+  }}
+  .ub-brand-title {{
+      color: {GOLD}; font-size: 22px; font-weight: 900; text-transform: uppercase;
+      letter-spacing: -0.02em; margin: 8px 0 0 0; line-height: 1.1;
+  }}
+  .ub-brand-tagline {{
+      color: #6b6b6b; font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.28em; margin: 2px 0 0 0;
+  }}
+</style>
+""", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONTROL DE ACCESO — solo administrador / analista (rol real "ingeniero")
+# ─────────────────────────────────────────────────────────────────────────────
+if "auth_user" not in st.session_state:
+    st.session_state.auth_user = None
+
+# Google redirige aqui con ?google_token=... tras un login exitoso en barber
+# (SocialAuthController::callback con target=spark) — se procesa una sola
+# vez y se limpia el query param para que un refresh no lo reintente.
+_google_token = st.query_params.get("google_token")
+_google_error = st.query_params.get("google_error")
+if _google_token and st.session_state.auth_user is None:
+    with st.spinner("Verificando tu cuenta de Google…"):
+        _google_user = verificar_google_token(_google_token)
+    st.query_params.clear()
+    if _google_user is None:
+        st.session_state.auth_user = None
+        st.session_state["_google_login_error"] = True
+    else:
+        st.session_state.auth_user = _google_user
+    st.rerun()
+
+if st.session_state.auth_user is None:
+    _c1, _c2, _c3 = st.columns([1, 1, 1])
+    with _c2:
+        st.image(_LOGO_PATH, width=96)
+        st.markdown(f"<h2 style='color:{GOLD};'>UrbanBlade Analytics</h2>", unsafe_allow_html=True)
+        st.caption("Acceso restringido — solo Administrador y Analista (staff técnico).")
+        if _google_error or st.session_state.pop("_google_login_error", False):
+            st.error("No se pudo iniciar sesión con Google, o tu cuenta no tiene el rol autorizado.")
+        st.link_button("Iniciar sesión con Google", google_login_url(), use_container_width=True)
+        st.caption("— o con correo y contraseña —")
+        with st.form("login_form"):
+            email = st.text_input("Correo")
+            password = st.text_input("Contraseña", type="password")
+            enviado = st.form_submit_button("Entrar", use_container_width=True)
+        if enviado:
+            # La contraseña la valida barber (POST /api/v1/auth/login), no spark:
+            # mismo límite de intentos y mismas reglas que la web y la app.
+            usuario = None
+            try:
+                with st.spinner("Verificando credenciales…"):
+                    usuario = autenticar_usuario(email, password)
+            except LoginBloqueado:
+                st.error("Demasiados intentos con este correo. Espera un minuto y vuelve a intentarlo.")
+            except ApiNoDisponible:
+                st.error("No se pudo contactar al servidor de UrbanBlade. Intenta de nuevo en unos minutos.")
+            else:
+                if usuario is None:
+                    st.error("Correo, contraseña o rol no autorizado.")
+                else:
+                    st.session_state.auth_user = usuario
+                    st.rerun()
+    st.stop()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CARGA DE DATOS (UNA VEZ POR SESIÓN)
+# ─────────────────────────────────────────────────────────────────────────────
+@st.cache_resource(show_spinner="Conectando a MongoDB Atlas y cargando datos reales…")
+def cargar_datos():
+    from config.mongo_spark_conexion_sinnulos import get_spark_session
+    from pyspark.sql.functions import when, col
+    spark, df, df_vector = get_spark_session()
+    pdf = df.toPandas()
+    return spark, df, df_vector, pdf
+
+# Se llama aqui (antes de definir el resto de las funciones de analisis, que
+# no importa en que orden se definan) para que el filtro de rango de fechas
+# del sidebar pueda usar el rango real de `pdf`.
+try:
+    _spark_full, _df_full, _df_vector_full, _pdf_full = cargar_datos()
+except Exception as e:
+    st.error(f"Error al conectar con MongoDB Atlas: {e}")
+    st.stop()
+
+@st.cache_resource(show_spinner="Entrenando modelos de regresión…")
+def entrenar_regresion(_spark, _df):
+    """Regresión HONESTA: predice la facturación DIARIA (no el precio por cita,
+    que sería trivial porque precio_cobrado==precio_servicio). Target=ingreso_dia,
+    features=num_citas/duración/calendario → sin fuga de datos."""
+    from pyspark.ml.feature import VectorAssembler, PolynomialExpansion
+    from pyspark.ml.regression import LinearRegression
+    from pyspark.ml.evaluation import RegressionEvaluator
+    from pyspark.ml.tuning import CrossValidator, ParamGridBuilder
+    from pyspark.sql.functions import col, count, sum as ssum, to_date, dayofweek, month
+
+    dia = (_df.filter(col("estado") != "cancelada")
+              .withColumn("fecha_dt", to_date(col("fecha").substr(1, 10), "yyyy-MM-dd"))
+              .groupBy("fecha_dt").agg(
+                  count("*").alias("num_citas"),
+                  ssum("ingreso").alias("ingreso_dia"),
+                  ssum("duracion_min").alias("duracion_total"))
+              .withColumn("dia_semana", dayofweek(col("fecha_dt")))
+              .withColumn("mes", month(col("fecha_dt")))
+              .dropna())
+    train, test = dia.randomSplit([0.8, 0.2], seed=42)
+
+    def evaluar(preds):
+        e = lambda mt: RegressionEvaluator(labelCol="ingreso_dia", predictionCol="prediction", metricName=mt).evaluate(preds)
+        return round(e("r2"), 4), round(e("mse"), 2), round(e("mae"), 2)
+
+    a1   = VectorAssembler(inputCols=["num_citas"], outputCol="features", handleInvalid="skip")
+    p1   = LinearRegression(featuresCol="features", labelCol="ingreso_dia").fit(a1.transform(train)).transform(a1.transform(test))
+    r1   = evaluar(p1)
+    pdf1 = p1.select("num_citas", "ingreso_dia", "prediction").toPandas()
+
+    feat = ["num_citas", "duracion_total", "dia_semana", "mes"]
+    a2   = VectorAssembler(inputCols=feat, outputCol="features", handleInvalid="skip")
+    tr2  = a2.transform(train); te2 = a2.transform(test)
+    m2   = LinearRegression(featuresCol="features", labelCol="ingreso_dia").fit(tr2)
+    r2   = evaluar(m2.transform(te2))
+
+    m3   = LinearRegression(featuresCol="features", labelCol="ingreso_dia", regParam=0.5, elasticNetParam=0).fit(tr2)
+    r3   = evaluar(m3.transform(te2))
+    m4   = LinearRegression(featuresCol="features", labelCol="ingreso_dia", regParam=0.5, elasticNetParam=1).fit(tr2)
+    r4   = evaluar(m4.transform(te2))
+
+    poly = PolynomialExpansion(inputCol="features", outputCol="pf", degree=2)
+    m5   = LinearRegression(featuresCol="pf", labelCol="ingreso_dia").fit(poly.transform(tr2))
+    r5   = evaluar(m5.transform(poly.transform(te2)))
+
+    ev   = RegressionEvaluator(labelCol="ingreso_dia", predictionCol="prediction", metricName="r2")
+    lr   = LinearRegression(featuresCol="features", labelCol="ingreso_dia")
+    pg   = ParamGridBuilder().addGrid(lr.regParam, [0.01, 0.1, 1]).addGrid(lr.elasticNetParam, [0, 0.5, 1]).build()
+    cv   = CrossValidator(estimator=lr, estimatorParamMaps=pg, evaluator=ev, numFolds=3)
+    r6   = evaluar(cv.fit(tr2).transform(te2))
+
+    tabla = pd.DataFrame({
+        "Modelo":  ["Lineal Simple", "Lineal Múltiple", "Ridge (L2)", "Lasso (L1)", "Polinomial", "Cross Validation"],
+        "R²":      [r1[0], r2[0], r3[0], r4[0], r5[0], r6[0]],
+        "MSE":     [r1[1], r2[1], r3[1], r4[1], r5[1], r6[1]],
+        "MAE":     [r1[2], r2[2], r3[2], r4[2], r5[2], r6[2]],
+    })
+    return tabla, pdf1
+
+@st.cache_resource(show_spinner="Entrenando Árbol de Decisión…")
+def entrenar_arbol(_spark, _df):
+    """Clasificación HONESTA: ¿se cancelará la cita? Target=es_cancelada,
+    features de contexto (sin el estado dentro) → sin fuga de datos."""
+    from pyspark.ml.feature import VectorAssembler
+    from pyspark.ml.classification import DecisionTreeClassifier
+    from pyspark.ml.evaluation import MulticlassClassificationEvaluator, BinaryClassificationEvaluator
+    from pyspark.sql.functions import col
+    from config.mongo_spark_conexion_sinnulos import FEATURES_CANCEL
+
+    asm   = VectorAssembler(inputCols=FEATURES_CANCEL, outputCol="features", handleInvalid="skip")
+    ds    = asm.transform(_df).select("features", col("es_cancelada").alias("label"))
+    tr, te = ds.randomSplit([0.8, 0.2], seed=42)
+    model = DecisionTreeClassifier(featuresCol="features", labelCol="label", maxDepth=5, seed=42).fit(tr)
+    preds = model.transform(te)
+
+    def m(name): return MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName=name).evaluate(preds)
+    metrics = {"Accuracy": round(m("accuracy"), 4), "Precision": round(m("weightedPrecision"), 4),
+               "Recall": round(m("weightedRecall"), 4), "F1": round(m("f1"), 4),
+               "AUC": round(BinaryClassificationEvaluator(labelCol="label", metricName="areaUnderROC").evaluate(preds), 4)}
+
+    conf = preds.groupBy("label", "prediction").count().toPandas()
+    feat_imp = list(model.featureImportances)
+    return metrics, conf, feat_imp
+
+@st.cache_resource(show_spinner="Entrenando Random Forest…")
+def entrenar_rf(_spark, _df):
+    """Mismo problema que el árbol (cancelación) pero con bosque de 100 árboles."""
+    from pyspark.ml import Pipeline
+    from pyspark.ml.feature import VectorAssembler
+    from pyspark.ml.classification import RandomForestClassifier
+    from pyspark.ml.evaluation import BinaryClassificationEvaluator, MulticlassClassificationEvaluator
+    from pyspark.sql.functions import col
+    from config.mongo_spark_conexion_sinnulos import FEATURES_CANCEL
+
+    df2  = _df.withColumn("categoria", col("es_cancelada").cast("int"))
+    tr, te = df2.randomSplit([0.7, 0.3], seed=42)
+    asm  = VectorAssembler(inputCols=FEATURES_CANCEL, outputCol="features", handleInvalid="skip")
+    rf   = RandomForestClassifier(featuresCol="features", labelCol="categoria", numTrees=100, maxDepth=5, seed=42)
+    model = Pipeline(stages=[asm, rf]).fit(tr)
+    preds = model.transform(te)
+
+    auc  = round(BinaryClassificationEvaluator(labelCol="categoria", metricName="areaUnderROC").evaluate(preds), 4)
+    def m(name): return round(MulticlassClassificationEvaluator(labelCol="categoria", predictionCol="prediction", metricName=name).evaluate(preds), 4)
+    metrics = {"Accuracy": m("accuracy"), "Precision": m("weightedPrecision"),
+               "Recall": m("weightedRecall"), "F1": m("f1"), "AUC": auc}
+    conf     = preds.groupBy("categoria", "prediction").count().toPandas()
+    feat_imp = list(model.stages[-1].featureImportances)
+    dist     = df2.groupBy("estado").count().toPandas()
+    return metrics, conf, feat_imp, dist
+
+@st.cache_resource(show_spinner="Ejecutando KMeans y Método del Codo…")
+def entrenar_kmeans(_df_vector, k=3):
+    from pyspark.ml.clustering import KMeans
+    from pyspark.ml.evaluation import ClusteringEvaluator
+    wcss, sil_scores = [], []
+    for ki in range(2, 9):
+        m  = KMeans(k=ki, seed=42, featuresCol="features", predictionCol="cluster").fit(_df_vector)
+        r  = m.transform(_df_vector)
+        ev = ClusteringEvaluator(featuresCol="features", predictionCol="cluster", metricName="silhouette")
+        wcss.append(m.summary.trainingCost)
+        sil_scores.append(round(ev.evaluate(r), 4))
+    model  = KMeans(k=k, seed=42, featuresCol="features", predictionCol="cluster").fit(_df_vector)
+    result = model.transform(_df_vector)
+    ev     = ClusteringEvaluator(featuresCol="features", predictionCol="cluster", metricName="silhouette")
+    sil    = round(ev.evaluate(result), 4)
+    pdf    = result.select("servicio", "barbero", "duracion_min", "precio", "ingreso", "estado", "cluster").toPandas()
+    centers = [(round(c[0],1), round(c[1],2), round(c[2],2)) for c in model.clusterCenters()]
+    return list(range(2, 9)), wcss, sil_scores, pdf, sil, centers
+
+@st.cache_resource(show_spinner="Ejecutando PCA + KMeans…")
+def entrenar_pca(_df_vector, _df):
+    from pyspark.ml.feature import StandardScaler, PCA, VectorAssembler
+    from pyspark.ml.clustering import KMeans
+    from pyspark.ml.evaluation import ClusteringEvaluator
+    from pyspark.sql.functions import udf
+    from pyspark.sql.types import ArrayType, DoubleType
+    df2  = _df.fillna({"duracion_min": 30, "precio": 0, "ingreso": 0})
+    asm  = VectorAssembler(inputCols=["duracion_min", "precio", "ingreso"], outputCol="features", handleInvalid="skip")
+    dv   = asm.transform(df2)
+    sc   = StandardScaler(inputCol="features", outputCol="sf", withStd=True, withMean=True).fit(dv).transform(dv)
+    pca  = PCA(k=2, inputCol="sf", outputCol="pf")
+    pm   = pca.fit(sc); dp = pm.transform(sc)
+    km   = KMeans(k=3, seed=42, featuresCol="pf", predictionCol="cluster").fit(dp)
+    dc   = km.transform(dp)
+    sil  = round(ClusteringEvaluator(featuresCol="pf", predictionCol="cluster").evaluate(dc), 4)
+    v2a  = udf(lambda v: v.toArray().tolist(), ArrayType(DoubleType()))
+    dc   = dc.withColumn("arr", v2a("pf"))
+    pdf  = dc.select("arr", "cluster", "servicio", "barbero", "duracion_min", "precio", "ingreso").toPandas()
+    pdf["PC1"] = pdf["arr"].apply(lambda x: x[0])
+    pdf["PC2"] = pdf["arr"].apply(lambda x: x[1])
+    var  = [round(float(v)*100, 1) for v in pm.explainedVariance]
+    return pdf, var, sil
+
+@st.cache_resource(show_spinner="Segmentando clientes (RFM + KMeans)…")
+def entrenar_segmentacion(_spark, _df):
+    from pyspark.ml.feature import VectorAssembler, StandardScaler
+    from pyspark.ml.clustering import KMeans
+    from pyspark.ml.evaluation import ClusteringEvaluator
+    from pyspark.sql.functions import col, count, avg, round as sround, udf
+    from pyspark.sql.types import StringType
+
+    clientes = get_clientes_df(_spark, _df)
+    feats = ["total_citas", "gasto_total", "gasto_promedio", "tasa_cancelacion_pct", "dias_sin_cita"]
+    asm   = VectorAssembler(inputCols=feats, outputCol="raw", handleInvalid="skip")
+    dv    = asm.transform(clientes)
+    sc    = StandardScaler(inputCol="raw", outputCol="features", withMean=True, withStd=True).fit(dv).transform(dv)
+    km    = KMeans(k=4, seed=42, featuresCol="features").fit(sc)
+    pred  = km.transform(sc)
+    sil   = round(ClusteringEvaluator(featuresCol="features").evaluate(pred), 4)
+
+    stats = (pred.groupBy("prediction").agg(
+                count("*").alias("num_clientes"),
+                sround(avg("total_citas"), 1).alias("citas_prom"),
+                sround(avg("gasto_total"), 0).alias("gasto_total_prom"),
+                sround(avg("gasto_promedio"), 0).alias("ticket_prom"),
+                sround(avg("tasa_cancelacion_pct"), 1).alias("cancelacion_pct"),
+                sround(avg("dias_sin_cita"), 0).alias("dias_inactivo_prom"))
+             .orderBy("gasto_total_prom", ascending=False).toPandas())
+
+    label_map = {int(stats.iloc[0]["prediction"]): "VIP",
+                 int(stats.iloc[1]["prediction"]): "Alto consumo"}
+    rem = [int(stats.iloc[2]["prediction"]), int(stats.iloc[3]["prediction"])]
+    sub = stats[stats["prediction"].astype(int).isin(rem)]
+    inact = int(sub.sort_values("dias_inactivo_prom", ascending=False).iloc[0]["prediction"])
+    label_map[inact] = "Inactivo"
+    for p in rem:
+        label_map.setdefault(p, "Frecuente")
+    stats["segmento"] = stats["prediction"].astype(int).map(label_map)
+
+    seg_udf = udf(lambda p: label_map.get(int(p), "?"), StringType())
+    seg_pdf = (pred.withColumn("segmento", seg_udf(col("prediction")))
+                   .select("cliente", "nivel", "total_citas", "gasto_total",
+                           "gasto_promedio", "tasa_cancelacion_pct", "dias_sin_cita", "segmento")
+                   .toPandas())
+    return seg_pdf, sil, stats
+
+@st.cache_resource(show_spinner="Prediciendo abandono de clientes (churn)…")
+def entrenar_churn(_spark, _df):
+    from pyspark.ml.feature import VectorAssembler
+    from pyspark.ml.classification import RandomForestClassifier
+    from pyspark.ml.evaluation import BinaryClassificationEvaluator, MulticlassClassificationEvaluator
+    from pyspark.sql.functions import col, when, row_number, min as smin
+    from pyspark.sql.window import Window
+
+    clientes = get_clientes_df(_spark, _df)
+    n_total = clientes.count()
+    n_riesgo_obj = max(1, min(n_total - 1, round(n_total * 0.30)))
+    # Top 30% por inactividad, vía ranking en vez de approxQuantile: con pocos
+    # clientes (empates frecuentes en dias_sin_cita) el cuantil puede coincidir
+    # con el máximo y dejar "label" en una sola clase para todo el dataset.
+    w = Window.orderBy(col("dias_sin_cita").desc(), col("client_id"))
+    clientes = clientes.withColumn(
+        "label", when(row_number().over(w) <= n_riesgo_obj, 1.0).otherwise(0.0)
+    )
+    umbral = clientes.filter(col("label") == 1).agg(smin("dias_sin_cita")).first()[0]
+
+    feats = ["total_citas", "gasto_promedio", "gasto_total",
+             "tasa_cancelacion_pct", "frecuencia_mensual", "meses_activo"]
+    data  = VectorAssembler(inputCols=feats, outputCol="features", handleInvalid="skip").transform(clientes)
+    tr, te = data.randomSplit([0.7, 0.3], seed=42)
+    if tr.select("label").distinct().count() < 2:
+        # con pocos clientes el split aleatorio puede dejar una sola clase en
+        # entrenamiento, y el modelo resultante rompe el evaluador binario
+        tr, te = data, data
+    model  = RandomForestClassifier(featuresCol="features", labelCol="label",
+                                    numTrees=100, maxDepth=5, seed=42).fit(tr)
+    preds  = model.transform(te)
+    auc = round(BinaryClassificationEvaluator(labelCol="label", rawPredictionCol="rawPrediction",
+                                              metricName="areaUnderROC").evaluate(preds), 4)
+    acc = round(MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction",
+                                                  metricName="accuracy").evaluate(preds), 4)
+    f1  = round(MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction",
+                                                  metricName="f1").evaluate(preds), 4)
+    metrics  = {"AUC": auc, "Accuracy": acc, "F1": f1, "umbral": round(umbral, 0)}
+    feat_imp = list(zip(feats, [round(float(x), 4) for x in model.featureImportances.toArray()]))
+
+    try:
+        from pyspark.ml.functions import vector_to_array
+        scored = model.transform(data).withColumn("prob", vector_to_array(col("probability"))[1] * 100)
+    except Exception:
+        from pyspark.sql.functions import udf
+        from pyspark.sql.types import DoubleType
+        p1 = udf(lambda v: float(v[1]) * 100, DoubleType())
+        scored = model.transform(data).withColumn("prob", p1(col("probability")))
+    riesgo = (scored.filter(col("label") == 1)
+                    .select("cliente", "nivel", "total_citas", "gasto_promedio",
+                            "tasa_cancelacion_pct", "dias_sin_cita", "prob")
+                    .orderBy(col("prob").desc()).limit(25).toPandas())
+    total   = clientes.count()
+    n_riesgo = clientes.filter(col("label") == 1).count()
+    return metrics, feat_imp, riesgo, (n_riesgo, total)
+
+@st.cache_resource(show_spinner="Buscando reglas de recomendación (FP-Growth)…")
+def entrenar_recomendacion(_spark, _df):
+    from pyspark.ml.fpm import FPGrowth
+    from pyspark.sql.functions import col, count, collect_set, size, round as sround, desc
+
+    df_ok = _df.filter(col("estado").isin("completada", "confirmada")).filter(col("client_id") != "")
+    tx    = (df_ok.groupBy("client_id").agg(collect_set("servicio").alias("items"))
+                  .filter(size(col("items")) >= 1))
+    fp    = FPGrowth(itemsCol="items", minSupport=0.10, minConfidence=0.20).fit(tx)
+    freq  = fp.freqItemsets.orderBy("freq", ascending=False).limit(15).toPandas()
+    rules = fp.associationRules
+    rules_pdf = (rules.select(
+                    col("antecedent").alias("si_pide"),
+                    col("consequent").alias("tambien_pedira"),
+                    sround(col("confidence") * 100, 1).alias("confianza_pct"),
+                    sround(col("lift"), 3).alias("lift"),
+                    sround(col("support") * 100, 1).alias("support_pct"))
+                 .orderBy(desc("lift")).limit(20).toPandas())
+    pop = (df_ok.groupBy("servicio", "categoria").agg(count("*").alias("veces_pedido"))
+                .orderBy("veces_pedido", ascending=False).toPandas())
+    freq["items"] = freq["items"].apply(lambda x: ", ".join(x))
+    for c in ["si_pide", "tambien_pedira"]:
+        if c in rules_pdf:
+            rules_pdf[c] = rules_pdf[c].apply(lambda x: ", ".join(x))
+    return freq, rules_pdf, pop
+
+@st.cache_resource(show_spinner="Analizando demanda temporal…")
+def analizar_demanda(_spark, _df):
+    from pyspark.ml.feature import VectorAssembler
+    from pyspark.ml.regression import GBTRegressor
+    from pyspark.ml.evaluation import RegressionEvaluator
+    from pyspark.sql.functions import col, count, sum as ssum, avg, round as sround
+
+    d = _df.filter((col("hora") > 0) & (col("dia_semana") > 0))
+    hora = d.groupBy("hora").agg(count("*").alias("citas"),
+                                 sround(ssum("ingreso"), 0).alias("ingreso")).orderBy("hora").toPandas()
+    dia  = d.groupBy("dia_semana").agg(count("*").alias("citas"),
+                                       sround(ssum("ingreso"), 0).alias("ingreso")).orderBy("dia_semana").toPandas()
+    mes  = d.groupBy("mes").agg(count("*").alias("citas"),
+                                sround(ssum("ingreso"), 0).alias("ingreso"),
+                                sround(avg("es_cancelada") * 100, 1).alias("cancel_pct")).orderBy("mes").toPandas()
+    dia["dia_nombre"] = dia["dia_semana"].map(DIAS_SEMANA)
+    mes["mes_nombre"] = mes["mes"].map(MESES)
+
+    slots = d.groupBy("mes", "dia_semana", "hora").agg(count("*").alias("num_citas")) \
+             .withColumn("num_citas", col("num_citas").cast("double"))
+    data = VectorAssembler(inputCols=["mes", "dia_semana", "hora"],
+                           outputCol="features", handleInvalid="skip").transform(slots)
+    tr, te = data.randomSplit([0.8, 0.2], seed=42)
+    gbt = GBTRegressor(featuresCol="features", labelCol="num_citas", maxDepth=3, maxIter=20, seed=42).fit(tr)
+    pr  = gbt.transform(te)
+    r2  = round(RegressionEvaluator(labelCol="num_citas", predictionCol="prediction", metricName="r2").evaluate(pr), 4)
+    imp = list(zip(["mes", "dia_semana", "hora"], [round(float(x), 4) for x in gbt.featureImportances.toArray()]))
+    return hora, dia, mes, r2, imp
+
+@st.cache_resource(show_spinner="Analizando pagos y calidad de datos…")
+def analizar_pagos(_spark):
+    pagos_sdf = get_pagos_df(_spark)
+    if pagos_sdf is None:
+        return None
+    pdf = pagos_sdf.toPandas()
+    return pdf
+
+@st.cache_resource(show_spinner="Analizando programa de fidelización…")
+def analizar_fidelizacion(_spark):
+    loy_sdf = get_loyalty_df(_spark)
+    if loy_sdf is None:
+        return None
+    return loy_sdf.toPandas()
+
+@st.cache_resource(show_spinner="Calculando utilización de barberos…")
+def analizar_utilizacion(_df_pandas):
+    horarios = get_horarios_df()
+    util = get_utilizacion_barberos_df(_df_pandas)
+    return horarios, util
+
+@st.cache_resource(show_spinner="Cargando inventario de productos…")
+def analizar_inventario():
+    return get_productos_df()
+
+@st.cache_resource(show_spinner="Analizando pedidos de tienda…")
+def analizar_pedidos(_spark):
+    pedidos_sdf = get_pedidos_df(_spark)
+    if pedidos_sdf is None:
+        return None, None
+    top = get_top_productos_df()
+    return pedidos_sdf.toPandas(), top
+
+@st.cache_resource(show_spinner="Analizando engagement del muro social…")
+def analizar_publicaciones(_spark):
+    pub_sdf = get_publicaciones_df(_spark)
+    if pub_sdf is None:
+        return None
+    return pub_sdf.toPandas()
+
+@st.cache_resource(show_spinner="Cargando gift cards, paquetes y combos…")
+def analizar_giftcards_paquetes():
+    return get_giftcards_df(), get_paquetes_df(), get_combos_df()
+
+@st.cache_resource(show_spinner="Analizando membresías…")
+def analizar_membresias():
+    return get_membresias_df(), get_membership_invoices_df()
+
+@st.cache_resource(show_spinner="Analizando referidos y rifas…")
+def analizar_referidos_rifas():
+    return get_referidos_df(), get_rifas_df()
+
+@st.cache_resource(show_spinner="Cargando lista de espera…")
+def analizar_waitlist():
+    return get_waitlist_df()
+
+@st.cache_resource(show_spinner="Calculando comisiones y reseñas de barberos…")
+def analizar_comisiones_resenas(_df_pandas):
+    return get_comisiones_df(_df_pandas), get_resenas_df()
+
+@st.cache_resource(show_spinner="Calculando cohortes de retención y CLV…")
+def analizar_cohortes_clv(_spark, _df, _pdf):
+    return get_cohortes_df(_pdf), get_clv_df(_spark, _df)
+
+@st.cache_resource(show_spinner="Proyectando citas e ingreso a futuro…")
+def analizar_forecast(_pdf):
+    return get_forecast_df(_pdf)
+
+@st.cache_resource(show_spinner="Buscando anomalías en citas e ingreso…")
+def analizar_anomalias(_pdf):
+    return get_anomalias_df(_pdf)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SIDEBAR
+# ─────────────────────────────────────────────────────────────────────────────
+with st.sidebar:
+    col_logo, col_brand = st.columns([1, 2.2])
+    with col_logo:
+        st.image(_LOGO_PATH, width=56)
+    with col_brand:
+        st.markdown(
+            "<p class='ub-brand-title'>UrbanBlade</p><p class='ub-brand-tagline'>Analytics</p>",
+            unsafe_allow_html=True,
+        )
+
+    _rol_txt = _NOMBRE_ROL.get(st.session_state.auth_user["rol"], st.session_state.auth_user["rol"])
+    with st.container(border=True):
+        st.markdown(
+            f"<p class='ub-eyebrow'>Sesión activa</p>"
+            f"<p style='color:#f2f2f2;font-weight:700;font-size:14px;margin:0;'>{st.session_state.auth_user['name']}</p>"
+            f"<span class='ub-role-badge'>{_rol_txt}</span>",
+            unsafe_allow_html=True,
+        )
+        if st.button("Cerrar sesión", use_container_width=True):
+            st.session_state.auth_user = None
+            st.rerun()
+
+    with st.container(border=True):
+        col_bruno, col_txt = st.columns([1, 2.4])
+        with col_bruno:
+            st.image(_BRUNO_PATH, width=56)
+        with col_txt:
+            st.markdown(
+                "<p class='ub-eyebrow'>Bruno</p>"
+                "<p style='color:#a3a3a3;font-size:12.5px;margin:0;line-height:1.4;'>Guardián del "
+                "conocimiento — lee los datos reales de <code>barber_db</code> y avisa cuando algo "
+                "no cuadra.</p>",
+                unsafe_allow_html=True,
+            )
+
+    with st.container(border=True):
+        st.markdown("<p class='ub-eyebrow'>Filtros</p>", unsafe_allow_html=True)
+        vista_sel = st.radio(
+            "Sección",
+            ["Todo el panel", "Operación y Datos",
+             "Modelos Predictivos", "Segmentación y Patrones"],
+            help="Filtra qué pestañas se muestran — útil para exponer una sección a la vez",
+        )
+        k_clusters = st.slider("Clusters KMeans (K)", 2, 8, 3)
+
+        if len(_pdf_full):
+            _fechas_validas = pd.to_datetime(_pdf_full["fecha"].str[:10], errors="coerce").dropna()
+        else:
+            _fechas_validas = pd.Series([], dtype="datetime64[ns]")
+        if len(_fechas_validas):
+            _fecha_min, _fecha_max = _fechas_validas.min().date(), _fechas_validas.max().date()
+            rango_fechas = st.date_input(
+                "Rango de fechas (citas)",
+                value=(_fecha_min, _fecha_max),
+                min_value=_fecha_min, max_value=_fecha_max,
+                help="Filtra el resumen ejecutivo y los modelos predictivos/de segmentación por fecha "
+                     "de la cita. Pagos, membresías, gift cards y demás siguen mostrando todo el histórico.",
+            )
+        else:
+            rango_fechas = None
+
+        with st.expander("Anotaciones (eventos conocidos)"):
+            st.caption("Marca picos/caídas conocidos en la gráfica de proyección de "
+                       "Demanda (ej. promoción, feriado). Solo dura la sesión.")
+            _anot_fecha = st.date_input("Fecha del evento", value=None, key="anot_fecha")
+            _anot_texto = st.text_input("Nota corta", key="anot_texto", max_chars=40)
+            if st.button("Agregar anotación", use_container_width=True):
+                if _anot_fecha and _anot_texto:
+                    st.session_state.setdefault("anotaciones", []).append(
+                        {"fecha": _anot_fecha, "texto": _anot_texto})
+                    st.rerun()
+            for _i, _a in enumerate(st.session_state.get("anotaciones", [])):
+                _c_a, _c_b = st.columns([4, 1])
+                _c_a.caption(f"{_a['fecha']} — {_a['texto']}")
+                if _c_b.button("✕", key=f"del_anot_{_i}"):
+                    st.session_state["anotaciones"].pop(_i)
+                    st.rerun()
+
+    # cache_resource nunca expira solo: si la BD cambió (nuevas citas, reseed),
+    # el dashboard seguiría mostrando datos viejos hasta reiniciar el proceso.
+    if st.button("Actualizar datos", use_container_width=True,
+                 help="Limpia la caché y recarga todo desde MongoDB Atlas"):
+        st.cache_resource.clear()
+        st.rerun()
+    st.caption("MongoDB Atlas → barber_db")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# APLICAR FILTRO DE FECHAS (citas) — el resto de colecciones (pagos,
+# membresías, gift cards, etc.) no dependen de esta variable y siguen
+# mostrando todo el histórico, ver ayuda del filtro en el sidebar.
+# ─────────────────────────────────────────────────────────────────────────────
+spark = _spark_full
+if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
+    _desde, _hasta = rango_fechas
+    _fecha_dt = pd.to_datetime(_pdf_full["fecha"].str[:10], errors="coerce")
+    _mascara = (_fecha_dt.dt.date >= _desde) & (_fecha_dt.dt.date <= _hasta)
+    pdf = _pdf_full[_mascara].reset_index(drop=True)
+    if len(pdf) < len(_pdf_full):
+        from pyspark.sql.functions import col as _col, to_date as _to_date
+        df = _df_full.filter(
+            (_to_date(_col("fecha").substr(1, 10), "yyyy-MM-dd") >= str(_desde))
+            & (_to_date(_col("fecha").substr(1, 10), "yyyy-MM-dd") <= str(_hasta))
+        )
+        from pyspark.ml.feature import VectorAssembler as _VectorAssembler
+        from config.mongo_spark_conexion_sinnulos import FEATURES_BASE as _FEATURES_BASE
+        df_vector = _VectorAssembler(
+            inputCols=_FEATURES_BASE, outputCol="features", handleInvalid="skip"
+        ).transform(df)
+    else:
+        df, df_vector = _df_full, _df_vector_full
+else:
+    df, df_vector, pdf = _df_full, _df_vector_full, _pdf_full
+
+# barber_db puede estar vacia (p.ej. tras un reseed) — los modelos de Spark ML
+# (modelos supervisados/no supervisados) truenan con "Training dataset is empty" en vez de mostrar un
+# estado vacio, asi que cada pestaña que entrena un modelo se guarda detras de
+# este flag en vez de intentarlo directamente.
+hay_citas = len(pdf) > 0
+if not hay_citas:
+    col_nava, col_msg = st.columns([1, 8])
+    with col_nava:
+        st.image(_NAVA_EMPTY_PATH, width=80)
+    with col_msg:
+        st.warning("**barber_db no tiene citas registradas todavía.** El resumen ejecutivo y los "
+                   "modelos predictivos y de segmentación requieren al menos algunas citas reales "
+                   "para entrenar — aparecerán automáticamente en cuanto existan datos.",
+                   icon=":material/warning:")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REPORTE EJECUTIVO (PDF con identidad UrbanBlade) — Resumen Ejecutivo
+# ─────────────────────────────────────────────────────────────────────────────
+def generar_reporte_pdf(pdf_data: pd.DataFrame, canceladas: int, ingreso_real: float) -> bytes:
+    """Genera un PDF de una pagina con el mismo lenguaje visual que los
+    correos de barber (fondo oscuro, acentos dorados, tarjetas redondeadas) —
+    pensado para llevarse a una junta sin tener que compartir pantalla."""
+    from fpdf import FPDF
+
+    GOLD_RGB = (212, 175, 55)
+    DARK_RGB = (14, 14, 14)
+    CARD_RGB = (26, 26, 26)
+    GRAY_RGB = (163, 163, 163)
+
+    pdf_doc = FPDF(orientation="P", unit="mm", format="A4")
+    pdf_doc.set_auto_page_break(False)  # reporte de una sola pagina a proposito
+    pdf_doc.add_page()
+    pdf_doc.set_fill_color(*DARK_RGB)
+    pdf_doc.rect(0, 0, 210, 297, style="F")
+
+    if os.path.exists(_LOGO_PATH):
+        pdf_doc.image(_LOGO_PATH, x=15, y=12, w=16)
+    pdf_doc.set_xy(35, 14)
+    pdf_doc.set_text_color(*GOLD_RGB)
+    pdf_doc.set_font("Helvetica", "B", 18)
+    pdf_doc.cell(0, 8, "UrbanBlade Analytics", new_x="LMARGIN", new_y="NEXT")
+    pdf_doc.set_x(35)
+    pdf_doc.set_text_color(*GRAY_RGB)
+    pdf_doc.set_font("Helvetica", "", 10)
+    rango_txt = "Todo el histórico disponible"
+    if len(pdf_data) and "fecha" in pdf_data:
+        _f = pd.to_datetime(pdf_data["fecha"].str[:10], errors="coerce").dropna()
+        if len(_f):
+            rango_txt = f"{_f.min().date()} - {_f.max().date()}"
+    pdf_doc.cell(0, 6, f"Reporte Ejecutivo - {rango_txt}", new_x="LMARGIN", new_y="NEXT")
+
+    pdf_doc.set_y(38)
+    pdf_doc.set_draw_color(42, 42, 42)
+    pdf_doc.line(15, pdf_doc.get_y(), 195, pdf_doc.get_y())
+
+    # ── KPIs ──────────────────────────────────────────────────────────────
+    n = len(pdf_data)
+    kpis = [
+        ("Total citas", f"{n:,}"),
+        ("Clientes únicos", f"{pdf_data['cliente'].nunique():,}" if n else "0"),
+        ("Ingreso real", f"${ingreso_real:,.0f} MXN"),
+        ("Ticket promedio", f"${pdf_data['ingreso'].mean():,.0f}" if n else "$0"),
+        ("Tasa cancelación", f"{canceladas / n * 100:.1f}%" if n else "0.0%"),
+        ("Barberos activos", f"{pdf_data['barbero'].nunique():,}" if n else "0"),
+    ]
+    pdf_doc.set_y(46)
+    col_w = 60
+    for i, (label, value) in enumerate(kpis):
+        x = 15 + (i % 3) * col_w
+        y = 46 + (i // 3) * 26
+        pdf_doc.set_xy(x, y)
+        pdf_doc.set_fill_color(*CARD_RGB)
+        pdf_doc.rect(x, y, col_w - 4, 22, style="F")
+        pdf_doc.set_xy(x + 4, y + 4)
+        pdf_doc.set_text_color(*GRAY_RGB)
+        pdf_doc.set_font("Helvetica", "", 8)
+        pdf_doc.cell(col_w - 10, 4, label.upper())
+        pdf_doc.set_xy(x + 4, y + 10)
+        pdf_doc.set_text_color(255, 255, 255)
+        pdf_doc.set_font("Helvetica", "B", 13)
+        pdf_doc.cell(col_w - 10, 8, value)
+
+    # ── Tablas: top barberos + ingreso por servicio ─────────────────────────
+    def _tabla(titulo, filas, y_inicio):
+        pdf_doc.set_xy(15, y_inicio)
+        pdf_doc.set_text_color(*GOLD_RGB)
+        pdf_doc.set_font("Helvetica", "B", 11)
+        pdf_doc.cell(0, 7, titulo, new_x="LMARGIN", new_y="NEXT")
+        pdf_doc.set_x(15)
+        for nombre, valor in filas:
+            pdf_doc.set_text_color(*GRAY_RGB)
+            pdf_doc.set_font("Helvetica", "", 9)
+            pdf_doc.cell(120, 6, str(nombre)[:45])
+            pdf_doc.set_text_color(255, 255, 255)
+            pdf_doc.set_font("Helvetica", "B", 9)
+            pdf_doc.cell(0, 6, str(valor), align="R", new_x="LMARGIN", new_y="NEXT")
+            pdf_doc.set_x(15)
+
+    if n:
+        top_barberos = (pdf_data.groupby("barbero").size().sort_values(ascending=False)
+                        .head(8).reset_index(name="citas"))
+        _tabla("Top barberos por número de citas",
+               [(r.barbero, f"{r.citas} citas") for r in top_barberos.itertuples()], 104)
+
+        por_svc = (pdf_data.groupby("servicio")["ingreso"].sum().sort_values(ascending=False)
+                   .head(8).reset_index())
+        _tabla("Ingreso por servicio",
+               [(r.servicio, f"${r.ingreso:,.0f}") for r in por_svc.itertuples()], 104 + 12 + len(top_barberos) * 6 + 10)
+
+    pdf_doc.set_y(280)
+    pdf_doc.set_text_color(90, 90, 90)
+    pdf_doc.set_font("Helvetica", "", 8)
+    pdf_doc.cell(0, 5, f"UrbanBlade Analytics - Equipo UrbanBlade - Generado {pd.Timestamp.now():%Y-%m-%d %H:%M}",
+                 align="C")
+
+    return bytes(pdf_doc.output())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HEADER + KPIs GLOBALES
+# ─────────────────────────────────────────────────────────────────────────────
+st.markdown(f"<h1 style='text-align:center;color:{GOLD};font-size:2.2rem;'><i class='fas fa-scissors'></i>&nbsp; UrbanBlade Analytics Dashboard</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center;color:#888;margin-top:-10px;'>Panel de inteligencia de negocio · Datos en tiempo real desde MongoDB Atlas</p>", unsafe_allow_html=True)
+st.divider()
+
+def _serie_semanal(pdf_data: pd.DataFrame) -> pd.DataFrame:
+    """Series semanales (últimas 10 semanas con datos) para las mini-gráficas
+    junto a cada KPI — mismo patrón que usa Stripe en su dashboard."""
+    cols = ["citas", "ingreso", "clientes", "ticket_promedio", "cancel_pct", "barberos"]
+    if pdf_data is None or pdf_data.empty or "fecha" not in pdf_data:
+        return pd.DataFrame(columns=cols)
+    d = pdf_data.copy()
+    d["fecha_dt"] = pd.to_datetime(d["fecha"].str[:10], errors="coerce")
+    d = d.dropna(subset=["fecha_dt"])
+    if d.empty:
+        return pd.DataFrame(columns=cols)
+    d["ingreso_real"] = d["ingreso"].where(d["estado"] != "cancelada", 0.0)
+    d["es_cancel"] = (d["estado"] == "cancelada").astype(int)
+    g = d.set_index("fecha_dt").resample("W")
+    serie = pd.DataFrame({
+        "citas":           g.size(),
+        "ingreso":         g["ingreso_real"].sum(),
+        "clientes":        g["cliente"].nunique(),
+        "ticket_promedio": g["ingreso"].mean(),
+        "cancel_pct":      g["es_cancel"].mean() * 100,
+        "barberos":        g["barbero"].nunique(),
+    }).fillna(0)
+    return serie.tail(10)
+
+
+def _sparkline(serie: pd.Series, color: str):
+    """Mini-gráfica sin ejes ni gridlines al estilo Stripe — solo la forma
+    de la tendencia reciente, no números exactos (para eso está el KPI)."""
+    if serie is None or len(serie.dropna()) < 2:
+        return None
+    fig = go.Figure(go.Scatter(
+        x=list(range(len(serie))), y=serie.values, mode="lines",
+        line=dict(color=color, width=2), fill="tozeroy",
+    ))
+    fig.update_traces(fillcolor=f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.15)")
+    fig.update_layout(
+        height=45, margin=dict(l=0, r=0, t=0, b=0),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        xaxis=dict(visible=False), yaxis=dict(visible=False), showlegend=False,
+    )
+    return fig
+
+
+canceladas   = pdf["es_cancelada"].sum() if "es_cancelada" in pdf else (pdf["estado"] == "cancelada").sum()
+ingreso_real = pdf.loc[pdf["estado"] != "cancelada", "ingreso"].sum()
+
+# Delta del último mes con datos vs el mes anterior, para los 6 KPIs (antes
+# solo Total Citas e Ingreso Real lo tenían) — responde de inmediato la
+# pregunta "¿y eso subió o bajó?" sin abrir la pestaña de Demanda.
+_delta = {"citas": None, "ingreso": None, "clientes": None, "ticket": None, "cancel": None}
+if {"anio", "mes"}.issubset(pdf.columns) and (pdf["anio"] > 0).any():
+    _mensual = (pdf[pdf["anio"] > 0]
+                .assign(_ing=lambda d: d["ingreso"].where(d["estado"] != "cancelada", 0.0),
+                        _cancel=lambda d: (d["estado"] == "cancelada").astype(int))
+                .groupby(["anio", "mes"])
+                .agg(citas=("ingreso", "size"), ingreso=("_ing", "sum"),
+                     clientes=("cliente", "nunique"), ticket=("ingreso", "mean"),
+                     cancel_pct=("_cancel", "mean"))
+                .sort_index())
+    if len(_mensual) >= 2:
+        _ult, _prev = _mensual.iloc[-1], _mensual.iloc[-2]
+        _delta["citas"]    = f"{int(_ult['citas'] - _prev['citas']):+,} vs mes anterior"
+        _delta["ingreso"]  = f"{_ult['ingreso'] - _prev['ingreso']:+,.0f} vs mes anterior"
+        _delta["clientes"] = f"{int(_ult['clientes'] - _prev['clientes']):+,} vs mes anterior"
+        _delta["ticket"]   = f"{_ult['ticket'] - _prev['ticket']:+,.0f} vs mes anterior"
+        _delta["cancel"]   = f"{(_ult['cancel_pct'] - _prev['cancel_pct']) * 100:+.1f} pts vs mes anterior"
+
+_sem = _serie_semanal(pdf)
+_spark_kwargs = dict(use_container_width=True, config={"displayModeBar": False})
+
+# ─────────────────────────────────────────────────────────────────────────────
+# "Número norte": Ingreso Real es la métrica que más le importa al dueño del
+# negocio (todo lo demás — citas, clientes, ticket, cancelación — explica el
+# ingreso, no al revés), así que se destaca visualmente en vez de competir en
+# igualdad de tamaño con las otras 5 — patrón que usan Stripe/GA4 en sus
+# resúmenes ("primary metric" grande arriba, el resto como contexto secundario).
+st.markdown(f"""
+<div style="border:1px solid rgba(212,175,55,0.35); border-radius:12px;
+            padding:18px 24px; margin-bottom:14px;
+            background:linear-gradient(135deg, rgba(212,175,55,0.10), rgba(212,175,55,0.02));">
+  <div style="font-size:0.85rem; letter-spacing:0.05em; text-transform:uppercase;
+              color:{GOLD}; opacity:0.9; margin-bottom:4px;">Métrica Norte</div>
+  <div style="font-size:2.6rem; font-weight:700; color:white; line-height:1.1;">
+    ${ingreso_real:,.0f}
+  </div>
+  <div style="color:#bbb; font-size:0.95rem; margin-top:2px;">
+    Ingreso Real{f" · {_delta['ingreso']}" if _delta["ingreso"] else ""}
+  </div>
+</div>
+""", unsafe_allow_html=True)
+_fig_norte = _sparkline(_sem["ingreso"], GOLD)
+if _fig_norte is not None:
+    _fig_norte.update_layout(height=70)
+    st.plotly_chart(_fig_norte, **_spark_kwargs)
+
+c1, c2, c3, c4, c5 = st.columns(5)
+with c1:
+    st.metric("Total Citas", f"{len(pdf):,}", delta=_delta["citas"])
+    _fig = _sparkline(_sem["citas"], BLUE)
+    if _fig is not None:
+        st.plotly_chart(_fig, **_spark_kwargs)
+with c2:
+    st.metric("Clientes Únicos", f"{pdf['cliente'].nunique():,}", delta=_delta["clientes"])
+    _fig = _sparkline(_sem["clientes"], BLUE)
+    if _fig is not None:
+        st.plotly_chart(_fig, **_spark_kwargs)
+with c3:
+    st.metric("Ticket Promedio", f"${pdf['ingreso'].mean():,.0f}" if hay_citas else "$0", delta=_delta["ticket"])
+    _fig = _sparkline(_sem["ticket_promedio"], PURPLE)
+    if _fig is not None:
+        st.plotly_chart(_fig, **_spark_kwargs)
+with c4:
+    st.metric("Tasa Cancelación", f"{canceladas/len(pdf)*100:.1f}%" if hay_citas else "0.0%",
+              delta=_delta["cancel"], delta_color="inverse", help="Baja es bueno")
+    _fig = _sparkline(_sem["cancel_pct"], RED)
+    if _fig is not None:
+        st.plotly_chart(_fig, **_spark_kwargs)
+with c5:
+    st.metric("Barberos", pdf["barbero"].nunique())
+    _fig = _sparkline(_sem["barberos"], "#999999")
+    if _fig is not None:
+        st.plotly_chart(_fig, **_spark_kwargs)
+
+st.divider()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TABS
+# ─────────────────────────────────────────────────────────────────────────────
+# Agrupación por necesidades de negocio: operación, predicción y patrones.
+# El selector mantiene la navegación legible con muchos análisis disponibles.
+# 'Resumen Ejecutivo' se incluye en todos los grupos como ancla.
+_TAB_GROUPS = {
+    "Todo el panel": ['Resumen Ejecutivo', 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario', 'Tienda y Pedidos', 'Publicaciones', 'Gift Cards y Paquetes', 'Membresias', 'Referidos y Rifas', 'Lista de Espera', 'Comisiones y Reseñas', 'Retención y CLV', 'Regresion', 'Arbol de Decision', 'Random Forest', 'Churn / Abandono', 'Demanda', 'KMeans', 'PCA', 'Segmentacion Clientes', 'Recomendacion'],
+    "Operación y Datos": ['Resumen Ejecutivo', 'MapReduce / ETL', 'Pagos y Calidad', 'Fidelizacion', 'Utilizacion Barberos', 'Inventario', 'Tienda y Pedidos', 'Publicaciones', 'Gift Cards y Paquetes', 'Membresias', 'Referidos y Rifas', 'Lista de Espera', 'Comisiones y Reseñas', 'Retención y CLV'],
+    "Modelos Predictivos": ['Resumen Ejecutivo', 'Regresion', 'Arbol de Decision', 'Random Forest', 'Churn / Abandono', 'Demanda'],
+    "Segmentación y Patrones": ['Resumen Ejecutivo', 'KMeans', 'PCA', 'Segmentacion Clientes', 'Recomendacion', 'Retención y CLV'],
+}
+_visible = _TAB_GROUPS[vista_sel]
+tabs = st.tabs(_visible)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 1 — RESUMEN GENERAL
+# ══════════════════════════════════════════════════════════════════════════════
+if "Resumen Ejecutivo" in _visible:
+    with tabs[_visible.index("Resumen Ejecutivo")]:
+        st.subheader("Resumen Ejecutivo del Negocio")
+
+        _anomalias = analizar_anomalias(pdf)
+        if not _anomalias.empty:
+            st.markdown("#### 🔔 Alertas")
+            for _, _fila in _anomalias.head(5).iterrows():
+                _flecha = "📈" if _fila["tipo"] == "arriba" else "📉"
+                _valor_fmt = f"${_fila['valor_real']:,.0f}" if _fila["metrica"] == "Ingreso" else f"{_fila['valor_real']:.0f}"
+                _esperado_fmt = f"${_fila['valor_esperado']:,.0f}" if _fila["metrica"] == "Ingreso" else f"{_fila['valor_esperado']:.0f}"
+                _mensaje = (
+                    f"{_flecha} Semana del **{_fila['fecha'].strftime('%d/%m/%Y')}**: "
+                    f"**{_fila['metrica']}** estuvo **{abs(_fila['desviacion_pct']):.0f}% "
+                    f"{'por arriba' if _fila['tipo'] == 'arriba' else 'por debajo'}** de lo esperado "
+                    f"({_valor_fmt} vs. {_esperado_fmt} esperado)."
+                )
+                if _fila["tipo"] == "arriba":
+                    st.success(_mensaje)
+                else:
+                    st.warning(_mensaje)
+            st.caption("Comparación contra el promedio móvil de las 4 semanas anteriores (±1.5 desviaciones estándar).")
+            st.divider()
+
+        col_a, col_b = st.columns(2)
+
+        with col_a:
+            # Distribución de estados — barras horizontales en vez de donut:
+            # con 6 estados posibles (ESTADOS_VALIDOS) un donut se vuelve dificil
+            # de comparar a simple vista; una barra ordenada sí lo permite.
+            estados = pdf["estado"].value_counts().reset_index()
+            estados.columns = ["estado", "count"]
+            estados = estados.sort_values("count", ascending=True)
+            fig = px.bar(estados, x="count", y="estado", orientation="h",
+                         title="Distribución de Estados de Citas",
+                         color="count", color_continuous_scale=[[0, "#444"], [1, GOLD]])
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              font_color="white", legend_font_color="white",
+                              coloraxis_showscale=False, yaxis_title="", xaxis_title="Citas")
+            st.plotly_chart(fig, use_container_width=True)
+
+        with col_b:
+            # Top barberos por citas
+            top_barberos = pdf.groupby("barbero").size().reset_index(name="citas").sort_values("citas", ascending=False).head(10)
+            fig2 = px.bar(top_barberos, x="citas", y="barbero", orientation="h",
+                          title="Top 10 Barberos por Número de Citas",
+                          color="citas", color_continuous_scale=[[0, "#444"], [1, GOLD]])
+            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", yaxis=dict(autorange="reversed"),
+                               coloraxis_showscale=False)
+            st.plotly_chart(fig2, use_container_width=True)
+
+        col_c, col_d = st.columns(2)
+
+        with col_c:
+            # Ingresos por servicio
+            por_svc = pdf.groupby("servicio")["ingreso"].sum().reset_index().sort_values("ingreso", ascending=False)
+            fig3 = px.bar(por_svc, x="servicio", y="ingreso",
+                          title="Ingreso Total por Tipo de Servicio",
+                          color="ingreso", color_continuous_scale=[[0, "#444"], [1, GOLD]],
+                          labels={"ingreso": "Ingreso ($MXN)", "servicio": "Servicio"})
+            fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", coloraxis_showscale=False, xaxis_tickangle=-30)
+            st.plotly_chart(fig3, use_container_width=True)
+
+        with col_d:
+            # Histograma de precios
+            fig4 = px.histogram(pdf, x="precio", nbins=30,
+                                title="Distribución de Precios de Citas",
+                                color_discrete_sequence=[GOLD],
+                                labels={"precio": "Precio ($MXN)", "count": "Frecuencia"})
+            if hay_citas:
+                fig4.add_vline(x=pdf["precio"].mean(), line_dash="dash", line_color=RED,
+                               annotation_text=f"Media: ${pdf['precio'].mean():.0f}", annotation_font_color="white")
+            fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig4, use_container_width=True)
+
+        st.divider()
+        st.markdown("#### Exportar")
+        col_exp1, col_exp2 = st.columns(2)
+        with col_exp1:
+            st.download_button(
+                "📄 Descargar reporte ejecutivo (PDF)",
+                data=generar_reporte_pdf(pdf, canceladas, ingreso_real),
+                file_name=f"urbanblade-reporte-{pd.Timestamp.now():%Y%m%d}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+        with col_exp2:
+            st.download_button(
+                "⬇️ Descargar datos filtrados (CSV)",
+                data=pdf.to_csv(index=False).encode("utf-8"),
+                file_name=f"urbanblade-citas-{pd.Timestamp.now():%Y%m%d}.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 2 — MAPREDUCE
+# ══════════════════════════════════════════════════════════════════════════════
+if "MapReduce / ETL" in _visible:
+    with tabs[_visible.index("MapReduce / ETL")]:
+        st.subheader("Procesamiento Distribuido (MapReduce / ETL)")
+        st.caption("MAP → agrupa | REDUCE → agrega métricas por servicio y barbero")
+
+        resumen = pdf.groupby("servicio").agg(
+            ingreso_total=("ingreso", "sum"),
+            citas=("ingreso", "count"),
+            precio_promedio=("precio", "mean"),
+            duracion_promedio=("duracion_min", "mean"),
+        ).reset_index().sort_values("ingreso_total", ascending=False)
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            fig = px.bar(resumen, x="servicio", y="ingreso_total",
+                         title="REDUCE → Ingreso Total por Servicio",
+                         color="ingreso_total", color_continuous_scale=[[0, "#333"], [1, GOLD]],
+                         labels={"ingreso_total": "Ingreso Total ($MXN)", "servicio": ""})
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              font_color="white", coloraxis_showscale=False, xaxis_tickangle=-30)
+            st.plotly_chart(fig, use_container_width=True)
+
+        with col2:
+            fig2 = px.bar(resumen.sort_values("citas", ascending=False), x="servicio", y="citas",
+                          title="REDUCE → Número de Citas por Servicio",
+                          color="citas", color_continuous_scale=[[0, "#333"], [1, BLUE]],
+                          labels={"citas": "Número de Citas", "servicio": ""})
+            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", coloraxis_showscale=False, xaxis_tickangle=-30)
+            st.plotly_chart(fig2, use_container_width=True)
+
+        col3, col4 = st.columns(2)
+
+        with col3:
+            fig3 = px.scatter(resumen, x="citas", y="ingreso_total", size="precio_promedio",
+                              text="servicio", title="Citas vs Ingreso Total (tamaño = precio promedio)",
+                              color="ingreso_total", color_continuous_scale=[[0, "#333"], [1, GOLD]])
+            fig3.update_traces(textposition="top center", textfont_color="white")
+            fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", coloraxis_showscale=False)
+            st.plotly_chart(fig3, use_container_width=True)
+
+        with col4:
+            # Ingreso por barbero
+            por_barbero = pdf.groupby("barbero")["ingreso"].sum().reset_index().sort_values("ingreso", ascending=False).head(12)
+            fig4 = px.bar(por_barbero, x="ingreso", y="barbero", orientation="h",
+                          title="Ingreso Total por Barbero (Top 12)",
+                          color="ingreso", color_continuous_scale=[[0, "#333"], [1, PURPLE]])
+            fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", yaxis=dict(autorange="reversed"), coloraxis_showscale=False)
+            st.plotly_chart(fig4, use_container_width=True)
+
+        st.subheader("Tabla MapReduce — Resumen por Servicio")
+        resumen_display = resumen.copy()
+        resumen_display["ingreso_total"]     = resumen_display["ingreso_total"].apply(lambda x: f"${x:,.2f}")
+        resumen_display["precio_promedio"]   = resumen_display["precio_promedio"].apply(lambda x: f"${x:,.2f}")
+        resumen_display["duracion_promedio"] = resumen_display["duracion_promedio"].apply(lambda x: f"{x:.1f} min")
+        resumen_display.columns = ["Servicio", "Ingreso Total", "Núm. Citas", "Precio Promedio", "Duración Promedio"]
+        st.dataframe(resumen_display, use_container_width=True, hide_index=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 3 — PAGOS Y CALIDAD DE DATOS
+# ══════════════════════════════════════════════════════════════════════════════
+if "Pagos y Calidad" in _visible:
+    with tabs[_visible.index("Pagos y Calidad")]:
+        st.subheader("Pagos y Calidad de Datos")
+        st.caption("Colección `payments` — reconciliación de cobros y métodos de pago")
+
+        pagos_pdf = analizar_pagos(spark)
+        if pagos_pdf is None or pagos_pdf.empty:
+            st.warning("Sin datos de pagos disponibles.")
+        else:
+            # get_pagos_df() incluye pagos en cualquier estado a propósito
+            # (es la fuente de este mismo tab de calidad), pero una
+            # transferencia rechazada o sin revisar nunca fue dinero real:
+            # antes "Propina total" y "Monto cobrado por servicio" sumaban
+            # los 11,016 pagos completos, sin poder distinguirlos siquiera
+            # (get_pagos_df() no devolvía el estado del pago). Las dos
+            # métricas de dinero real se calculan solo sobre lo verificado;
+            # el conteo de "Pagos registrados" sí incluye todo, porque es
+            # justo la señal de calidad que este tab promete.
+            pagos_verificados = pagos_pdf[pagos_pdf["estado_pago"] == PAGO_ESTADO_VERIFICADO]
+            n_no_verificados = len(pagos_pdf) - len(pagos_verificados)
+
+            n_metodos = pagos_pdf["metodo_pago"].nunique()
+            n_procesadores = pagos_pdf["procesado_por"].nunique()
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Pagos registrados", f"{len(pagos_pdf):,}",
+                      help="Incluye pagos rechazados y transferencias sin verificar.")
+            c2.metric("Propina total (verificada)", f"${pagos_verificados['propina'].sum():,.0f}")
+            c3.metric("Métodos de pago", n_metodos)
+            c4.metric("Procesadores distintos", n_procesadores)
+
+            col_a, col_b = st.columns(2)
+            with col_a:
+                metodos = pagos_pdf["metodo_pago"].value_counts().reset_index()
+                metodos.columns = ["metodo", "pagos"]
+                fig = px.pie(metodos, values="pagos", names="metodo", hole=0.45,
+                             title="Distribución por método de pago",
+                             color_discrete_sequence=px.colors.qualitative.Set2)
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig, use_container_width=True)
+            with col_b:
+                top_svc = pagos_verificados.groupby("servicio")["monto"].sum().reset_index().sort_values("monto", ascending=False).head(10)
+                fig2 = px.bar(top_svc, x="monto", y="servicio", orientation="h",
+                              title="Monto cobrado por servicio (top 10, solo pagos verificados)",
+                              color="monto", color_continuous_scale=[[0, "#333"], [1, GOLD]])
+                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                   font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+                st.plotly_chart(fig2, use_container_width=True)
+
+            st.info(f"**Calidad de datos:** {n_procesadores} cuenta(s) procesan el 100% de los cobros "
+                    f"y se usa {n_metodos} método de pago (`{pagos_pdf['metodo_pago'].iloc[0]}`) — "
+                    f"el sistema centraliza el cobro y no hay variedad de métodos digitales todavía. "
+                    f"{n_no_verificados:,} de los {len(pagos_pdf):,} pagos registrados "
+                    f"({n_no_verificados / len(pagos_pdf):.1%}) están rechazados o pendientes de "
+                    f"verificar y no se cuentan en las métricas de dinero de arriba.",
+                    icon=":material/info:")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 4 — FIDELIZACIÓN
+# ══════════════════════════════════════════════════════════════════════════════
+if "Fidelizacion" in _visible:
+    with tabs[_visible.index("Fidelizacion")]:
+        st.subheader("Programa de Fidelización")
+        st.caption("Colección `loyalty_transactions` — puntos ganados por cliente")
+
+        loy_pdf = analizar_fidelizacion(spark)
+        if loy_pdf is None or loy_pdf.empty:
+            st.warning("Sin transacciones de lealtad disponibles.")
+        else:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Transacciones", f"{len(loy_pdf):,}")
+            c2.metric("Puntos totales otorgados", f"{loy_pdf['puntos'].sum():,.0f}")
+            c3.metric("Clientes con puntos", loy_pdf["cliente"].nunique())
+
+            col_a, col_b = st.columns(2)
+            with col_a:
+                por_nivel = loy_pdf.groupby(["cliente", "nivel"])["puntos"].sum().reset_index()
+                resumen_nivel = por_nivel.groupby("nivel")["puntos"].mean().reset_index()
+                fig = px.bar(resumen_nivel, x="nivel", y="puntos",
+                             title="Puntos promedio por nivel de cliente",
+                             color="nivel", color_discrete_sequence=[BLUE, GOLD])
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig, use_container_width=True)
+            with col_b:
+                top_clientes = por_nivel.sort_values("puntos", ascending=False).head(10)
+                fig2 = px.bar(top_clientes, x="puntos", y="cliente", orientation="h",
+                              title="Top 10 clientes por puntos acumulados",
+                              color="puntos", color_continuous_scale=[[0, "#333"], [1, GOLD]])
+                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                   font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+                st.plotly_chart(fig2, use_container_width=True)
+
+            tendencia = loy_pdf[loy_pdf["anio"] > 0].groupby(["anio", "mes"])["puntos"].sum().reset_index()
+            tendencia["periodo"] = tendencia["anio"].astype(str) + "-" + tendencia["mes"].astype(str).str.zfill(2)
+            fig3 = px.line(tendencia.sort_values("periodo"), x="periodo", y="puntos", markers=True,
+                           title="Tendencia mensual de puntos otorgados")
+            fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig3, use_container_width=True)
+
+            st.info("Todas las transacciones son de tipo `ganado` — aún no hay canjes registrados. "
+                    "Oportunidad: activar la redención de puntos por servicios/productos.",
+                    icon=":material/info:")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 5 — UTILIZACIÓN DE BARBEROS
+# ══════════════════════════════════════════════════════════════════════════════
+if "Utilizacion Barberos" in _visible:
+    with tabs[_visible.index("Utilizacion Barberos")]:
+        st.subheader("Utilización de Barberos (oferta vs demanda)")
+        st.caption("Colección `barber_schedules` — horas disponibles vs horas ocupadas")
+
+        horarios, util = analizar_utilizacion(pdf)
+        if util is None or util.empty:
+            st.warning("Sin datos de horarios disponibles.")
+        else:
+            ranking = (util.groupby("barbero")
+                           .agg(utilizacion_prom=("utilizacion_pct", "mean"))
+                           .round(1).reset_index().sort_values("utilizacion_prom", ascending=False))
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Barberos con agenda", horarios["barbero"].nunique())
+            c2.metric("Utilización promedio del equipo", f"{ranking['utilizacion_prom'].mean():.1f}%")
+            c3.metric("Sobrecargados (>80%)", int((ranking["utilizacion_prom"] > 80).sum()))
+
+            col_a, col_b = st.columns(2)
+            with col_a:
+                fig = px.bar(ranking, x="utilizacion_prom", y="barbero", orientation="h",
+                             title="Utilización promedio por barbero",
+                             color="utilizacion_prom", color_continuous_scale=[[0, BLUE], [0.5, GOLD], [1, RED]])
+                fig.add_vline(x=80, line_dash="dash", line_color=RED, annotation_text="Sobrecarga")
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                  font_color="white", coloraxis_showscale=False,
+                                  yaxis=dict(autorange="reversed"), height=600)
+                st.plotly_chart(fig, use_container_width=True)
+            with col_b:
+                util_disp = util.copy()
+                util_disp["dia_nombre"] = util_disp["dia_semana"].map(DIAS_SEMANA)
+                heat = util_disp.pivot_table(index="barbero", columns="dia_nombre",
+                                             values="utilizacion_pct", aggfunc="mean")
+                fig2 = px.imshow(heat, text_auto=".0f", color_continuous_scale=[[0, DARK], [1, GOLD]],
+                                 title="Mapa de calor: utilización por barbero y día",
+                                 labels=dict(color="Utilización %"))
+                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white", height=600)
+                st.plotly_chart(fig2, use_container_width=True)
+
+            st.info(f"Equipo con utilización promedio de {ranking['utilizacion_prom'].mean():.1f}%. "
+                    f"Redistribuir citas de barberos/días saturados hacia los de baja utilización "
+                    f"optimiza la agenda sin contratar personal adicional.", icon=":material/info:")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 6 — INVENTARIO
+# ══════════════════════════════════════════════════════════════════════════════
+if "Inventario" in _visible:
+    with tabs[_visible.index("Inventario")]:
+        st.subheader("Salud del Inventario")
+        st.caption("Colección `products` — stock, márgenes y categorías")
+
+        productos = analizar_inventario()
+        if productos is None or productos.empty:
+            st.warning("Sin productos disponibles.")
+        else:
+            alertas = productos[productos["necesita_reorden"]]
+            venta = productos[productos["tipo"] == "venta"]
+            valor_inventario = (productos["precio_compra"] * productos["stock_actual"]).sum()
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Productos", len(productos))
+            c2.metric("Alertas de reorden", len(alertas))
+            c3.metric("Margen promedio (venta)", f"{venta['margen_pct'].mean():.1f}%" if len(venta) else "N/A")
+            c4.metric("Valor de inventario", f"${valor_inventario:,.0f}")
+
+            col_a, col_b = st.columns(2)
+            with col_a:
+                cat = productos["categoria"].value_counts().reset_index()
+                cat.columns = ["categoria", "productos"]
+                fig = px.bar(cat, x="productos", y="categoria", orientation="h",
+                             title="Productos por categoría",
+                             color="productos", color_continuous_scale=[[0, "#333"], [1, PURPLE]])
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                  font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+                st.plotly_chart(fig, use_container_width=True)
+            with col_b:
+                fig2 = px.bar(venta.sort_values("margen_pct", ascending=False).head(10),
+                              x="margen_pct", y="producto", orientation="h",
+                              title="Top 10 productos por margen (%)",
+                              color="margen_pct", color_continuous_scale=[[0, "#333"], [1, GREEN]])
+                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                   font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+                st.plotly_chart(fig2, use_container_width=True)
+
+            if len(alertas):
+                st.warning(f"{len(alertas)} producto(s) requieren reorden inmediato.", icon=":material/warning:")
+            else:
+                st.success("Inventario saludable — sin alertas de reorden.")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — TIENDA Y PEDIDOS
+# ══════════════════════════════════════════════════════════════════════════════
+if "Tienda y Pedidos" in _visible:
+    with tabs[_visible.index("Tienda y Pedidos")]:
+        st.subheader("Pedidos de Tienda")
+        st.caption("Add-ons de cita ('cita') vs compras sueltas ('tienda') — checkout de productos")
+
+        pedidos_pdf, top_pdf = analizar_pedidos(spark)
+        if pedidos_pdf is None or pedidos_pdf.empty:
+            st.warning("Sin pedidos disponibles.")
+        else:
+            entregados = pedidos_pdf[pedidos_pdf["estado"] == "entregado"]
+            ingreso_total = entregados["total"].sum()
+            tienda = pedidos_pdf[pedidos_pdf["tipo"] == "tienda"]
+            cancelados = tienda[tienda["estado"] == "cancelado"]
+            tasa_cancel = round(len(cancelados) / len(tienda) * 100, 1) if len(tienda) else 0.0
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Pedidos totales", f"{len(pedidos_pdf):,}")
+            c2.metric("Ingreso entregado", f"${ingreso_total:,.0f}")
+            c3.metric("Ticket promedio", f"${entregados['total'].mean():,.0f}" if len(entregados) else "N/A")
+            c4.metric("Cancelación tienda", f"{tasa_cancel}%")
+
+            col_a, col_b = st.columns(2)
+            with col_a:
+                dist = pedidos_pdf.groupby(["tipo", "estado"]).size().reset_index(name="pedidos")
+                fig = px.bar(dist, x="tipo", y="pedidos", color="estado",
+                             title="Distribución de pedidos por tipo y estado",
+                             barmode="stack", color_discrete_sequence=px.colors.qualitative.Set2)
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig, use_container_width=True)
+            with col_b:
+                ing_tipo = entregados.groupby("tipo")["total"].sum().reset_index()
+                fig2 = px.pie(ing_tipo, values="total", names="tipo", hole=0.45,
+                              title="Ingreso entregado por tipo (cita vs tienda)",
+                              color_discrete_sequence=[GOLD, BLUE])
+                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig2, use_container_width=True)
+
+            if top_pdf is not None and len(top_pdf):
+                resumen_top = (top_pdf.groupby("producto")
+                               .agg(unidades=("cantidad", "sum"), ingreso=("subtotal", "sum"))
+                               .sort_values("unidades", ascending=False).head(10).reset_index())
+                fig3 = px.bar(resumen_top, x="unidades", y="producto", orientation="h",
+                              title="Top 10 productos más vendidos (unidades, pedidos entregados)",
+                              color="unidades", color_continuous_scale=[[0, "#333"], [1, GOLD]])
+                fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                   font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+                st.plotly_chart(fig3, use_container_width=True)
+
+            citas_addon = len(pedidos_pdf[pedidos_pdf["tipo"] == "cita"])
+            pct_addon = round(ing_tipo.set_index("tipo")["total"].get("cita", 0) / ingreso_total * 100, 1) if ingreso_total else 0
+            st.info(f"Los add-ons dentro de citas ({citas_addon:,} pedidos) representan el {pct_addon}% del "
+                    f"ingreso de tienda — el checkout durante la reserva convierte mejor que la tienda suelta.",
+                    icon=":material/info:")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — PUBLICACIONES (MURO SOCIAL)
+# ══════════════════════════════════════════════════════════════════════════════
+if "Publicaciones" in _visible:
+    with tabs[_visible.index("Publicaciones")]:
+        st.subheader("Engagement del Muro de Inspiración")
+        st.caption("Colecciones `works` / `work_images` / `comments` / `reactions` — portafolio social por barbero")
+
+        pub_pdf = analizar_publicaciones(spark)
+        if pub_pdf is None or pub_pdf.empty:
+            st.warning("Sin publicaciones disponibles.")
+        else:
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Barberos con publicaciones", len(pub_pdf))
+            c2.metric("Publicaciones totales", int(pub_pdf["publicaciones"].sum()))
+            c3.metric("Comentarios totales", int(pub_pdf["comentarios"].sum()))
+            c4.metric("Reacciones totales", int(pub_pdf["reacciones"].sum()))
+
+            top_engagement = pub_pdf.sort_values("engagement_por_post", ascending=False).head(10)
+            fig = px.bar(top_engagement, x="engagement_por_post", y="barbero", orientation="h",
+                         title="Top 10 barberos por engagement (comentarios + reacciones / post)",
+                         color="engagement_por_post", color_continuous_scale=[[0, "#333"], [1, GOLD]])
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig, use_container_width=True)
+
+            citas_barbero = pdf[pdf["estado"] == "completada"].groupby("barbero").size().reset_index(name="citas_completadas")
+            cruce = pub_pdf.merge(citas_barbero, on="barbero", how="left").fillna({"citas_completadas": 0})
+            fig2 = px.scatter(cruce, x="engagement_por_post", y="citas_completadas", text="barbero",
+                              title="Engagement vs volumen de citas completadas",
+                              color="engagement_por_post", color_continuous_scale=[[0, "#333"], [1, PURPLE]])
+            fig2.update_traces(textposition="top center", textfont_color="white")
+            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", coloraxis_showscale=False)
+            st.plotly_chart(fig2, use_container_width=True)
+
+            correlacion = cruce[["engagement_por_post", "citas_completadas"]].corr().iloc[0, 1] if len(cruce) >= 3 else None
+            n_sin_posts = pdf["barbero"].nunique() - len(pub_pdf)
+            if correlacion is not None:
+                st.info(f"Correlación engagement vs citas completadas: {correlacion:.2f}. "
+                        f"{n_sin_posts} barbero(s) sin ninguna publicación todavía.",
+                        icon=":material/info:")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — GIFT CARDS, PAQUETES Y COMBOS
+# ══════════════════════════════════════════════════════════════════════════════
+if "Gift Cards y Paquetes" in _visible:
+    with tabs[_visible.index("Gift Cards y Paquetes")]:
+        st.subheader("Gift Cards, Paquetes y Combos")
+        st.caption("Colecciones `gift_cards` / `client_packages` / `service_combos` — crédito prepagado y ofertas empaquetadas")
+
+        gc_pdf, pq_pdf, combo_pdf = analizar_giftcards_paquetes()
+
+        st.markdown("#### Gift Cards")
+        if gc_pdf is None or gc_pdf.empty:
+            st.info("Sin gift cards vendidas todavía.", icon=":material/info:")
+        else:
+            vendido = gc_pdf["monto_inicial"].sum()
+            saldo_vivo = gc_pdf[gc_pdf["estado"] == "activa"]["saldo"].sum()
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Gift cards vendidas", len(gc_pdf))
+            c2.metric("Monto vendido", f"${vendido:,.0f}")
+            c3.metric("Saldo vivo (activas)", f"${saldo_vivo:,.0f}")
+            c4.metric("% consumido promedio", f"{gc_pdf['pct_usado'].mean():.0f}%")
+
+            col_a, col_b = st.columns(2)
+            with col_a:
+                fig = px.pie(gc_pdf, names="estado", title="Gift cards por estado", hole=0.45,
+                             color_discrete_sequence=px.colors.qualitative.Set2)
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig, use_container_width=True)
+            with col_b:
+                fig2 = px.histogram(gc_pdf, x="monto_inicial", nbins=20, title="Distribución del monto comprado",
+                                    color_discrete_sequence=[GOLD])
+                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig2, use_container_width=True)
+
+        st.markdown("#### Paquetes prepagados")
+        if pq_pdf is None or pq_pdf.empty:
+            st.info("Sin paquetes comprados todavía.", icon=":material/info:")
+        else:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Paquetes vendidos", len(pq_pdf))
+            c2.metric("Ingreso por paquetes", f"${pq_pdf['precio_pagado'].sum():,.0f}")
+            c3.metric("Usos consumidos", int(pq_pdf["usos_consumidos"].sum()))
+
+            top_paquetes = pq_pdf.groupby("paquete").size().reset_index(name="ventas").sort_values("ventas", ascending=False)
+            fig3 = px.bar(top_paquetes, x="ventas", y="paquete", orientation="h", title="Paquetes más vendidos",
+                          color="ventas", color_continuous_scale=[[0, "#333"], [1, BLUE]])
+            fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig3, use_container_width=True)
+
+        st.markdown("#### Combos (catálogo)")
+        if combo_pdf is None or combo_pdf.empty:
+            st.info("Sin combos configurados todavía.", icon=":material/info:")
+        else:
+            st.dataframe(combo_pdf.rename(columns={
+                "combo": "Combo", "precio_combo": "Precio", "descuento": "Descuento",
+                "num_servicios": "N° servicios incluidos"}),
+                use_container_width=True, hide_index=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — MEMBRESÍAS
+# ══════════════════════════════════════════════════════════════════════════════
+if "Membresias" in _visible:
+    with tabs[_visible.index("Membresias")]:
+        st.subheader("Membresías Recurrentes")
+        st.caption("Colecciones `client_memberships` / `membership_plans` / `membership_invoices` — suscripción vía Stripe")
+
+        mem_pdf, inv_pdf = analizar_membresias()
+        if mem_pdf is None or mem_pdf.empty:
+            st.warning("Sin membresías contratadas todavía.")
+        else:
+            activas = mem_pdf[mem_pdf["estado"] == "activa"]
+            mrr = (activas["precio_mensual"]).sum()
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Suscripciones", len(mem_pdf))
+            c2.metric("Activas", len(activas))
+            c3.metric("MRR (activas)", f"${mrr:,.0f}")
+            c4.metric("Se cancelarán al finalizar", int(activas["cancelar_al_finalizar"].sum()))
+
+            col_a, col_b = st.columns(2)
+            with col_a:
+                fig = px.pie(mem_pdf, names="estado", title="Suscripciones por estado", hole=0.45,
+                             color_discrete_sequence=px.colors.qualitative.Set2)
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig, use_container_width=True)
+            with col_b:
+                por_plan = mem_pdf.groupby("plan").size().reset_index(name="suscriptores")
+                fig2 = px.bar(por_plan, x="plan", y="suscriptores", title="Suscriptores por plan",
+                              color="suscriptores", color_continuous_scale=[[0, "#333"], [1, GOLD]])
+                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                   font_color="white", coloraxis_showscale=False)
+                st.plotly_chart(fig2, use_container_width=True)
+
+            st.markdown("#### Cobros (facturas)")
+            if inv_pdf is None or inv_pdf.empty:
+                st.info("Sin cobros de membresía registrados todavía.", icon=":material/info:")
+            else:
+                st.metric("Ingreso total por membresías", f"${inv_pdf['monto'].sum():,.0f}")
+                st.dataframe(inv_pdf.rename(columns={"cliente": "Cliente", "plan": "Plan", "monto": "Monto"}),
+                             use_container_width=True, hide_index=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — REFERIDOS Y RIFAS
+# ══════════════════════════════════════════════════════════════════════════════
+if "Referidos y Rifas" in _visible:
+    with tabs[_visible.index("Referidos y Rifas")]:
+        st.subheader("Referidos y Rifa Mensual")
+        st.caption("Colecciones `referrals` / `raffle_results` — crecimiento por boca a boca y sorteo de lealtad")
+
+        ref_pdf, rifa_pdf = analizar_referidos_rifas()
+
+        st.markdown("#### Referidos")
+        if ref_pdf is None or ref_pdf.empty:
+            st.info("Sin referidos registrados todavía.", icon=":material/info:")
+        else:
+            completados = ref_pdf[ref_pdf["estado"] == "completado"]
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Referidos totales", len(ref_pdf))
+            c2.metric("Completados", len(completados))
+            c3.metric("Tasa de conversión", f"{len(completados)/len(ref_pdf)*100:.0f}%")
+
+            top_referentes = ref_pdf.groupby("referente").size().reset_index(name="referidos").sort_values("referidos", ascending=False).head(10)
+            fig = px.bar(top_referentes, x="referidos", y="referente", orientation="h",
+                         title="Top referentes (clientes que más invitan)",
+                         color="referidos", color_continuous_scale=[[0, "#333"], [1, GREEN]])
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown("#### Rifa mensual de lealtad")
+        if rifa_pdf is None or rifa_pdf.empty:
+            st.info("Sin resultados de rifa todavía.", icon=":material/info:")
+        else:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Premios entregados", len(rifa_pdf))
+            c2.metric("Reclamados", int(rifa_pdf["reclamado"].sum()))
+            c3.metric("Caducados sin reclamar", int(rifa_pdf["vencido"].sum()))
+            st.dataframe(rifa_pdf.rename(columns={
+                "cliente": "Cliente", "mes": "Mes", "premio": "Premio",
+                "nivel_ganador": "Nivel", "reclamado": "Reclamado", "vencido": "Vencido"}),
+                use_container_width=True, hide_index=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — LISTA DE ESPERA
+# ══════════════════════════════════════════════════════════════════════════════
+if "Lista de Espera" in _visible:
+    with tabs[_visible.index("Lista de Espera")]:
+        st.subheader("Lista de Espera")
+        st.caption("Colección `waitlists` — clientes anotados cuando un barbero/servicio/fecha ya no tiene horarios")
+
+        wl_pdf = analizar_waitlist()
+        if wl_pdf is None or wl_pdf.empty:
+            st.warning("Sin entradas en lista de espera todavía.")
+        else:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Entradas totales", len(wl_pdf))
+            c2.metric("Activas ahora", int(wl_pdf["activa"].sum()))
+            c3.metric("Reservadas (convirtieron)", int((wl_pdf["estado"] == "reservado").sum()))
+
+            col_a, col_b = st.columns(2)
+            with col_a:
+                fig = px.pie(wl_pdf, names="estado", title="Entradas por estado", hole=0.45,
+                             color_discrete_sequence=px.colors.qualitative.Set2)
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig, use_container_width=True)
+            with col_b:
+                demanda = wl_pdf.groupby(["barbero", "servicio"]).size().reset_index(name="anotados").sort_values("anotados", ascending=False).head(10)
+                fig2 = px.bar(demanda, x="anotados", y="barbero", orientation="h", color="servicio",
+                              title="Mayor demanda insatisfecha (barbero + servicio)",
+                              color_discrete_sequence=px.colors.qualitative.Set2)
+                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                   font_color="white", yaxis=dict(autorange="reversed"))
+                st.plotly_chart(fig2, use_container_width=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — COMISIONES Y RESEÑAS
+# ══════════════════════════════════════════════════════════════════════════════
+if "Comisiones y Reseñas" in _visible:
+    with tabs[_visible.index("Comisiones y Reseñas")]:
+        st.subheader("Comisiones de Barberos y Reseñas")
+        st.caption("`barbers.comision_pct` × ingreso real, y colección `barber_reviews` — desempeño individual por barbero")
+
+        com_pdf, res_pdf = analizar_comisiones_resenas(pdf)
+
+        st.markdown("#### Comisiones")
+        if com_pdf is None or com_pdf.empty:
+            st.info("Sin barberos con comisión configurada, o sin citas todavía.", icon=":material/info:")
+        else:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Barberos", len(com_pdf))
+            c2.metric("Comisión total del periodo", f"${com_pdf['comision_ganada'].sum():,.0f}")
+            c3.metric("Comisión promedio", f"{com_pdf['comision_pct'].mean():.1f}%")
+
+            top_comision = com_pdf.sort_values("comision_ganada", ascending=False).head(10)
+            fig = px.bar(top_comision, x="comision_ganada", y="barbero", orientation="h",
+                         title="Top 10 barberos por comisión ganada",
+                         color="comision_ganada", color_continuous_scale=[[0, "#333"], [1, GOLD]])
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown("#### Reseñas de clientes")
+        if res_pdf is None or res_pdf.empty:
+            st.info("Sin reseñas registradas todavía.", icon=":material/info:")
+        else:
+            c1, c2 = st.columns(2)
+            c1.metric("Reseñas totales", len(res_pdf))
+            c2.metric("Rating promedio", f"{res_pdf['rating'].mean():.1f} / 5")
+
+            rating_barbero = res_pdf.groupby("barbero")["rating"].mean().reset_index().sort_values("rating", ascending=False)
+            fig2 = px.bar(rating_barbero, x="rating", y="barbero", orientation="h", title="Rating promedio por barbero",
+                          color="rating", color_continuous_scale=[[0, "#333"], [1, GREEN]], range_x=[0, 5])
+            fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font_color="white", coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig2, use_container_width=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — RETENCIÓN Y CLV (spark-advanced-analytics-plan, Fase 1)
+# ══════════════════════════════════════════════════════════════════════════════
+if "Retención y CLV" in _visible:
+    with tabs[_visible.index("Retención y CLV")]:
+        st.subheader("Retención de Clientes (Cohortes) y CLV Proyectado")
+        st.caption("Patrón de Mixpanel/Amplitude/Shopify: ¿los clientes que llegan se quedan? "
+                   "¿cuánto van a gastar en total?")
+
+        if not hay_citas:
+            st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
+                    "en cuanto existan datos reales.", icon=":material/info:")
+        else:
+            cohortes_pdf, clv_pdf = analizar_cohortes_clv(spark, df, pdf)
+
+            st.markdown("#### Retención por cohorte de llegada")
+            if cohortes_pdf is None or cohortes_pdf.empty:
+                st.info("No hay suficientes meses de historia todavía para calcular cohortes.",
+                        icon=":material/info:")
+            else:
+                tabla_cohorte = cohortes_pdf.pivot(index="cohorte", columns="mes_desde_cohorte",
+                                                    values="retencion_pct")
+                tabla_cohorte.columns = [f"Mes {c}" for c in tabla_cohorte.columns]
+                fig_coh = px.imshow(tabla_cohorte, text_auto=".0f", aspect="auto",
+                                     color_continuous_scale=[[0, "#2a0a0a"], [0.5, "#4a3a10"], [1, GOLD]],
+                                     labels=dict(x="Meses desde la primera cita", y="Cohorte (mes de llegada)",
+                                                 color="Retención %"))
+                # Sin esto, plotly detecta las etiquetas "2026-06" como fechas
+                # y las reformatea de forma ilegible (eje Y es categorico, no temporal).
+                fig_coh.update_yaxes(type="category")
+                fig_coh.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white",
+                                       title="% de la cohorte que volvió a agendar cada mes siguiente")
+                st.plotly_chart(fig_coh, use_container_width=True)
+                st.caption("Fila = mes en que un grupo de clientes llegó por primera vez. Columna = "
+                           "meses después. 100% en 'Mes 0' es normal (es la cita que los define como "
+                           "cohorte) — lo que importa es qué tan rápido cae hacia la derecha.")
+
+            st.divider()
+            st.markdown("#### CLV proyectado a 12 meses")
+            if clv_pdf is None or clv_pdf.empty:
+                st.info("Sin clientes suficientes para proyectar CLV todavía.", icon=":material/info:")
+            else:
+                col_k1, col_k2, col_k3 = st.columns(3)
+                col_k1.metric("CLV promedio (12m)", f"${clv_pdf['clv_proyectado_12m'].mean():,.0f}")
+                col_k2.metric("CLV total de la cartera", f"${clv_pdf['clv_proyectado_12m'].sum():,.0f}")
+                top_cliente = clv_pdf.loc[clv_pdf["clv_proyectado_12m"].idxmax()]
+                col_k3.metric("Cliente de mayor valor", top_cliente["cliente"],
+                              delta=f"${top_cliente['clv_proyectado_12m']:,.0f} proyectado")
+
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    top10 = clv_pdf.sort_values("clv_proyectado_12m", ascending=False).head(10)
+                    fig_clv = px.bar(top10, x="clv_proyectado_12m", y="cliente", orientation="h",
+                                      title="Top 10 clientes por CLV proyectado",
+                                      color="clv_proyectado_12m", color_continuous_scale=[[0, "#333"], [1, GOLD]],
+                                      labels={"clv_proyectado_12m": "CLV proyectado 12m ($MXN)", "cliente": ""})
+                    fig_clv.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                           font_color="white", coloraxis_showscale=False,
+                                           yaxis=dict(autorange="reversed"))
+                    st.plotly_chart(fig_clv, use_container_width=True)
+                with col_b:
+                    fig_dist = px.histogram(clv_pdf, x="clv_proyectado_12m", nbins=15,
+                                             title="Distribución del CLV proyectado",
+                                             color_discrete_sequence=[GOLD],
+                                             labels={"clv_proyectado_12m": "CLV proyectado 12m ($MXN)"})
+                    fig_dist.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                            font_color="white")
+                    st.plotly_chart(fig_dist, use_container_width=True)
+
+                st.caption("Fórmula: gasto promedio por cita × frecuencia mensual × 12 meses — misma "
+                           "lógica que el CLV básico de Shopify. Es una proyección, no una garantía: "
+                           "mejora conforme haya más historial real por cliente.")
+                st.dataframe(
+                    clv_pdf[["cliente", "nivel", "total_citas", "gasto_promedio",
+                             "frecuencia_mensual", "clv_proyectado_12m"]]
+                    .sort_values("clv_proyectado_12m", ascending=False)
+                    .rename(columns={"cliente": "Cliente", "nivel": "Nivel", "total_citas": "Citas",
+                                      "gasto_promedio": "Gasto Prom.", "frecuencia_mensual": "Citas/Mes",
+                                      "clv_proyectado_12m": "CLV 12m"}),
+                    use_container_width=True, hide_index=True,
+                )
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 7 — REGRESIÓN
+# ══════════════════════════════════════════════════════════════════════════════
+if "Regresion" in _visible:
+    with tabs[_visible.index("Regresion")]:
+        st.subheader("Predicción de Ingresos (Regresión)")
+        st.caption("Predicción de la FACTURACIÓN DIARIA (target real, sin fuga) · 6 modelos · R², MSE, MAE")
+        if not hay_citas:
+            st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
+                    "en cuanto existan datos reales.", icon=":material/info:")
+        else:
+            st.info("Se predice el ingreso **por día** a partir del volumen de citas y el calendario. "
+                    "Predecir el precio de una sola cita sería trivial (precio_cobrado==precio_servicio), "
+                    "por eso agregamos por día: ahí sí hay varianza real.", icon=":material/info:")
+
+            with st.spinner("Entrenando 6 modelos de regresión sobre datos reales…"):
+                tabla_reg, pdf_scatter = entrenar_regresion(spark, df)
+
+            mejor = tabla_reg.loc[tabla_reg["R²"].idxmax()]
+            peor  = tabla_reg.loc[tabla_reg["MSE"].idxmax()]
+
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Mejor R²",       f"{mejor['R²']:.4f}",  delta=mejor["Modelo"])
+            c2.metric("Menor MAE",      f"${tabla_reg['MAE'].min():.2f}")
+            c3.metric("Menor MSE",      f"{tabla_reg['MSE'].min():.2f}")
+
+            col_a, col_b = st.columns(2)
+
+            with col_a:
+                fig = px.bar(tabla_reg, x="Modelo", y="R²",
+                             title="Comparación R² — 6 Modelos de Regresión",
+                             color="R²", color_continuous_scale=[[0, "#333"], [1, GOLD]],
+                             text_auto=".4f")
+                fig.add_hline(y=0.9, line_dash="dot", line_color=GREEN, annotation_text="R²=0.9 excelente", annotation_font_color="white")
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                  font_color="white", coloraxis_showscale=False, xaxis_tickangle=-20)
+                st.plotly_chart(fig, use_container_width=True)
+
+            with col_b:
+                fig2 = go.Figure()
+                fig2.add_trace(go.Bar(name="MSE", x=tabla_reg["Modelo"], y=tabla_reg["MSE"], marker_color=RED))
+                fig2.add_trace(go.Bar(name="MAE", x=tabla_reg["Modelo"], y=tabla_reg["MAE"], marker_color=BLUE))
+                fig2.update_layout(title="MSE vs MAE por Modelo",
+                                   barmode="group", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                   font_color="white", xaxis_tickangle=-20)
+                st.plotly_chart(fig2, use_container_width=True)
+
+            col_c, col_d = st.columns(2)
+
+            with col_c:
+                fig3 = px.scatter(pdf_scatter, x="num_citas", y="ingreso_dia",
+                                  title="Facturación diaria real vs Predicción (Lineal Simple)",
+                                  labels={"num_citas": "Citas en el día", "ingreso_dia": "Facturación del día ($MXN)"},
+                                  color_discrete_sequence=[BLUE], opacity=0.5)
+                fig3.add_scatter(x=pdf_scatter["num_citas"], y=pdf_scatter["prediction"],
+                                 mode="markers", name="Predicción", marker=dict(color=GOLD, symbol="x", size=6))
+                fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig3, use_container_width=True)
+
+            with col_d:
+                st.subheader("Tabla Comparativa de Modelos")
+                st.dataframe(
+                    tabla_reg.style.highlight_max(subset=["R²"], color="#2d4a1e")
+                                   .highlight_min(subset=["MSE", "MAE"], color="#2d4a1e")
+                                   .format({"R²": "{:.4f}", "MSE": "{:.2f}", "MAE": "{:.2f}"}),
+                    use_container_width=True, hide_index=True
+                )
+                mejor_idx = tabla_reg["R²"].idxmax()
+                st.success(f"Mejor modelo: **{tabla_reg.loc[mejor_idx, 'Modelo']}** — R²={tabla_reg.loc[mejor_idx, 'R²']:.4f}")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 8 — ÁRBOL DE DECISIÓN
+# ══════════════════════════════════════════════════════════════════════════════
+if "Arbol de Decision" in _visible:
+    with tabs[_visible.index("Arbol de Decision")]:
+        st.subheader("Árbol de Decisión — Predicción de Cancelaciones")
+        st.caption("Clasificación honesta: ¿se CANCELARÁ la cita?  1 = cancelada  |  0 = resto  ·  clases desbalanceadas → AUC")
+
+        if not hay_citas:
+            st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
+                    "en cuanto existan datos reales.", icon=":material/info:")
+        else:
+            with st.spinner("Entrenando Árbol de Decisión…"):
+                metricas_dt, conf_dt, feat_imp_dt = entrenar_arbol(spark, df)
+
+            c1, c2, c3, c4, c5 = st.columns(5)
+            c1.metric("Accuracy",  f"{metricas_dt['Accuracy']*100:.1f}%")
+            c2.metric("Precision", f"{metricas_dt['Precision']:.4f}")
+            c3.metric("Recall",    f"{metricas_dt['Recall']:.4f}")
+            c4.metric("F1-Score",  f"{metricas_dt['F1']:.4f}")
+            c5.metric("AUC-ROC",   f"{metricas_dt['AUC']:.4f}")
+
+            col_a, col_b = st.columns(2)
+
+            with col_a:
+                # Matriz de confusión como heatmap
+                labels_map = {0: "No cancela", 1: "Cancela"}
+                conf_dt = conf_dt.assign(
+                    label_str=conf_dt["label"].map(labels_map),
+                    prediction_str=conf_dt["prediction"].map(labels_map),
+                )
+                pivot = conf_dt.pivot(index="label_str", columns="prediction_str", values="count").fillna(0)
+                fig = px.imshow(pivot, text_auto=True, color_continuous_scale=[[0, DARK], [1, GOLD]],
+                                title="Matriz de Confusión — Árbol de Decisión",
+                                labels=dict(x="Predicción", y="Real", color="Cantidad"))
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig, use_container_width=True)
+
+            with col_b:
+                # Importancia de variables
+                feat_names = FEATURES_CANCEL
+                fig2 = px.bar(x=feat_names, y=feat_imp_dt,
+                              title="Importancia de Variables — Árbol de Decisión",
+                              color=feat_imp_dt, color_continuous_scale=[[0, "#333"], [1, GOLD]],
+                              labels={"x": "Variable", "y": "Importancia", "color": "Importancia"})
+                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                   font_color="white", coloraxis_showscale=False)
+                st.plotly_chart(fig2, use_container_width=True)
+
+            # Métricas en radar
+            col_c, col_d = st.columns(2)
+            with col_c:
+                categorias = ["Accuracy", "Precision", "Recall", "F1", "AUC"]
+                valores    = [metricas_dt[k] for k in categorias]
+                fig3 = go.Figure(go.Scatterpolar(
+                    r=valores, theta=categorias, fill="toself",
+                    line_color=GOLD, fillcolor=f"rgba(212,175,55,0.2)"
+                ))
+                fig3.update_layout(title="Métricas del Modelo (Radar)",
+                                   polar=dict(radialaxis=dict(visible=True, range=[0, 1], color="white"),
+                                              angularaxis=dict(color="white")),
+                                   paper_bgcolor="rgba(0,0,0,0)", font_color="white", showlegend=False)
+                st.plotly_chart(fig3, use_container_width=True)
+
+            with col_d:
+                st.markdown("### Interpretación")
+                acc = metricas_dt["Accuracy"]
+                auc = metricas_dt["AUC"]
+                st.info(f"""
+    **Árbol de Decisión — predicción de cancelación**
+
+    - **AUC {auc:.4f}**: capacidad discriminativa {'excelente' if auc > 0.8 else 'buena' if auc > 0.7 else 'moderada'}
+      (métrica clave: las clases están desbalanceadas ~8% cancelaciones)
+    - **Accuracy {acc*100:.1f}%**: con clases desbalanceadas, el accuracy engaña → mirar AUC/Recall
+    - **Feature más importante**: `{feat_names[feat_imp_dt.index(max(feat_imp_dt))]}`
+      ({max(feat_imp_dt)*100:.1f}% del poder predictivo)
+    - **Sin fuga de datos**: se predice desde el contexto (hora, día, servicio), no desde el estado
+    - **Aplicación**: reforzar recordatorios en los horarios/servicios de mayor riesgo
+            """)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 9 — RANDOM FOREST
+# ══════════════════════════════════════════════════════════════════════════════
+if "Random Forest" in _visible:
+    with tabs[_visible.index("Random Forest")]:
+        st.subheader("Random Forest — Predicción de Cancelaciones")
+        st.caption("Mismo problema que el Árbol (cancelación) pero con 100 árboles → comparar AUC: el bosque suele ganar")
+
+        if not hay_citas:
+            st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
+                    "en cuanto existan datos reales.", icon=":material/info:")
+        else:
+            with st.spinner("Entrenando Random Forest (100 árboles)…"):
+                metricas_rf, conf_rf, feat_imp_rf, dist_estados = entrenar_rf(spark, df)
+
+            c1, c2, c3, c4, c5 = st.columns(5)
+            c1.metric("Accuracy",  f"{metricas_rf['Accuracy']*100:.1f}%")
+            c2.metric("Precision", f"{metricas_rf['Precision']:.4f}")
+            c3.metric("Recall",    f"{metricas_rf['Recall']:.4f}")
+            c4.metric("F1-Score",  f"{metricas_rf['F1']:.4f}")
+            c5.metric("AUC-ROC",   f"{metricas_rf['AUC']:.4f}")
+
+            col_a, col_b = st.columns(2)
+
+            with col_a:
+                labels_rf = {0: "No cancela", 1: "Cancela"}
+                conf_rf = conf_rf.assign(
+                    cat_str=conf_rf["categoria"].map(labels_rf),
+                    pred_str=conf_rf["prediction"].map(labels_rf),
+                )
+                pivot_rf = conf_rf.pivot(index="cat_str", columns="pred_str", values="count").fillna(0)
+                fig = px.imshow(pivot_rf, text_auto=True, color_continuous_scale=[[0, DARK], [1, RED]],
+                                title="Matriz de Confusión — Random Forest",
+                                labels=dict(x="Predicción", y="Real", color="Cantidad"))
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig, use_container_width=True)
+
+            with col_b:
+                feat_names = FEATURES_CANCEL
+                fig2 = px.bar(x=feat_names, y=feat_imp_rf,
+                              title="Importancia de Variables — Random Forest",
+                              color=feat_imp_rf, color_continuous_scale=[[0, "#333"], [1, RED]],
+                              labels={"x": "Variable", "y": "Importancia"}, text_auto=".3f")
+                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                   font_color="white", coloraxis_showscale=False)
+                st.plotly_chart(fig2, use_container_width=True)
+
+            col_c, col_d = st.columns(2)
+
+            with col_c:
+                # Barras horizontales en vez de donut: mismo motivo que en Resumen
+                # Ejecutivo — 6 estados posibles son dificiles de comparar en un pie.
+                dist_estados_bar = dist_estados.sort_values("count", ascending=True)
+                fig3 = px.bar(dist_estados_bar, x="count", y="estado", orientation="h",
+                              title="Distribución Real de Estados en Datos de Entrenamiento",
+                              color="count", color_continuous_scale=[[0, "#444"], [1, GOLD]])
+                fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                    font_color="white", coloraxis_showscale=False,
+                                    yaxis_title="", xaxis_title="Cantidad")
+                st.plotly_chart(fig3, use_container_width=True)
+
+            with col_d:
+                categorias = ["Accuracy", "Precision", "Recall", "F1", "AUC"]
+                valores    = [metricas_rf[k] for k in categorias]
+                fig4 = go.Figure(go.Scatterpolar(
+                    r=valores, theta=categorias, fill="toself",
+                    line_color=RED, fillcolor="rgba(231,76,60,0.2)"
+                ))
+                fig4.update_layout(title="Métricas Random Forest (Radar)",
+                                   polar=dict(radialaxis=dict(visible=True, range=[0, 1], color="white"),
+                                              angularaxis=dict(color="white")),
+                                   paper_bgcolor="rgba(0,0,0,0)", font_color="white", showlegend=False)
+                st.plotly_chart(fig4, use_container_width=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 10 — CHURN / ABANDONO
+# ══════════════════════════════════════════════════════════════════════════════
+if "Churn / Abandono" in _visible:
+    with tabs[_visible.index("Churn / Abandono")]:
+        st.subheader("Predicción de Abandono (Churn)")
+        st.caption("Random Forest · churn = cliente con recencia > percentil 70 · features SIN la recencia (sin fuga)")
+
+        if not hay_citas:
+            st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
+                    "en cuanto existan datos reales.", icon=":material/info:")
+        else:
+            ch_metrics, ch_imp, ch_riesgo, (n_riesgo, n_total) = entrenar_churn(spark, df)
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("AUC-ROC", ch_metrics["AUC"], help="Evaluado en datos no vistos")
+            c2.metric("F1-Score", ch_metrics["F1"])
+            c3.metric("Clientes en riesgo", f"{n_riesgo:,}", delta=f"{n_riesgo/n_total*100:.0f}% del total")
+            c4.metric("Umbral recencia", f"{ch_metrics['umbral']:.0f} días")
+
+            col_a, col_b = st.columns([1, 1])
+            with col_a:
+                imp_df = pd.DataFrame(ch_imp, columns=["variable", "importancia"]).sort_values("importancia")
+                fig = px.bar(imp_df, x="importancia", y="variable", orientation="h",
+                             title="Qué anticipa el abandono (importancia de variables)",
+                             color="importancia", color_continuous_scale=[[0, "#333"], [1, RED]], text_auto=".3f")
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                  font_color="white", coloraxis_showscale=False)
+                st.plotly_chart(fig, use_container_width=True)
+            with col_b:
+                fig2 = go.Figure(go.Pie(values=[n_riesgo, n_total - n_riesgo],
+                                        labels=["En riesgo", "Estables"], hole=0.5,
+                                        marker_colors=[RED, GREEN]))
+                fig2.update_layout(title="Clientes en riesgo vs estables",
+                                   paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig2, use_container_width=True)
+
+            st.subheader("Clientes con mayor probabilidad de abandono")
+            ch_show = ch_riesgo.copy()
+            ch_show["prob"] = ch_show["prob"].apply(lambda x: f"{x:.1f}%")
+            ch_show.columns = ["Cliente", "Nivel", "Citas", "Ticket prom.", "Cancel %", "Días sin cita", "Prob. abandono"]
+            st.dataframe(ch_show, use_container_width=True, hide_index=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 11 — DEMANDA
+# ══════════════════════════════════════════════════════════════════════════════
+if "Demanda" in _visible:
+    with tabs[_visible.index("Demanda")]:
+        st.subheader("Predicción de Demanda y Horarios")
+        st.caption("Regresión supervisada (GBT): ¿cuántas citas esperar por hora, día y mes?")
+
+        if not hay_citas:
+            st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
+                    "en cuanto existan datos reales.", icon=":material/info:")
+        else:
+            dem_hora, dem_dia, dem_mes, dem_r2, dem_imp = analizar_demanda(spark, df)
+
+            hora_pico = dem_hora.loc[dem_hora["citas"].idxmax()]
+            dia_pico  = dem_dia.loc[dem_dia["citas"].idxmax()]
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Hora pico", f"{int(hora_pico['hora']):02d}:00", delta=f"{int(hora_pico['citas'])} citas")
+            c2.metric("Día más activo", dia_pico["dia_nombre"], delta=f"{int(dia_pico['citas'])} citas")
+            c3.metric("R² modelo GBT", dem_r2)
+
+            col_a, col_b = st.columns(2)
+            with col_a:
+                fig = px.bar(dem_hora, x="hora", y="citas", title="Demanda por hora del día",
+                             color="citas", color_continuous_scale=[[0, "#333"], [1, GOLD]],
+                             labels={"hora": "Hora", "citas": "Citas"})
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                  font_color="white", coloraxis_showscale=False)
+                st.plotly_chart(fig, use_container_width=True)
+            with col_b:
+                fig2 = px.bar(dem_dia, x="dia_nombre", y="citas", title="Demanda por día de la semana",
+                              color="citas", color_continuous_scale=[[0, "#333"], [1, BLUE]],
+                              labels={"dia_nombre": "", "citas": "Citas"})
+                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                   font_color="white", coloraxis_showscale=False)
+                st.plotly_chart(fig2, use_container_width=True)
+
+            col_c, col_d = st.columns([2, 1])
+            with col_c:
+                fig3 = go.Figure()
+                fig3.add_trace(go.Bar(x=dem_mes["mes_nombre"], y=dem_mes["citas"], name="Citas", marker_color=GOLD))
+                fig3.add_trace(go.Scatter(x=dem_mes["mes_nombre"], y=dem_mes["cancel_pct"], name="Cancelación %",
+                                          yaxis="y2", line=dict(color=RED, width=2)))
+                fig3.update_layout(title="Estacionalidad mensual: citas y % cancelación",
+                                   yaxis=dict(title="Citas"), yaxis2=dict(title="Cancel %", overlaying="y", side="right"),
+                                   paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig3, use_container_width=True)
+            with col_d:
+                imp_df = pd.DataFrame(dem_imp, columns=["variable", "importancia"]).sort_values("importancia")
+                fig4 = px.bar(imp_df, x="importancia", y="variable", orientation="h",
+                              title="Qué determina la demanda", color="importancia",
+                              color_continuous_scale=[[0, "#333"], [1, GREEN]], text_auto=".3f")
+                fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                   font_color="white", coloraxis_showscale=False)
+                st.plotly_chart(fig4, use_container_width=True)
+
+            st.divider()
+            st.markdown("#### Proyección a futuro (próximas semanas)")
+            _forecast = analizar_forecast(pdf)
+            if _forecast is None:
+                st.info("Todavía no hay suficiente historial semanal (mínimo 4 semanas) para "
+                        "proyectar hacia adelante con algo de confianza — aparecerá automáticamente "
+                        "en cuanto haya más semanas de citas reales.", icon=":material/info:")
+            else:
+                st.info("Proyección por tendencia lineal simple, no un modelo complejo tipo "
+                        "ARIMA/Prophet: con pocos meses de historial real, un modelo más sofisticado "
+                        "sobreajustaría y daría una falsa sensación de precisión. El R² de cada "
+                        "proyección indica qué tan bien la tendencia lineal explica el histórico — "
+                        "entre más bajo, más ancha debería sentirse la incertidumbre real.",
+                        icon=":material/info:")
+
+                col_p1, col_p2 = st.columns(2)
+                for columna, col_dest, color_, nombre in [
+                    ("citas", col_p1, GOLD, "Citas por semana"),
+                    ("ingreso", col_p2, GREEN, "Ingreso por semana ($MXN)"),
+                ]:
+                    datos = _forecast[columna]
+                    with col_dest:
+                        fig_f = go.Figure()
+                        fig_f.add_trace(go.Scatter(
+                            x=datos["historico"]["fecha"], y=datos["historico"]["valor"],
+                            mode="lines+markers", name="Real", line=dict(color="#999", width=2)))
+                        fig_f.add_trace(go.Scatter(
+                            x=datos["proyeccion"]["fecha"], y=datos["proyeccion"]["max"],
+                            mode="lines", line=dict(width=0), showlegend=False, hoverinfo="skip"))
+                        fig_f.add_trace(go.Scatter(
+                            x=datos["proyeccion"]["fecha"], y=datos["proyeccion"]["min"],
+                            mode="lines", line=dict(width=0), fill="tonexty",
+                            fillcolor=f"rgba({int(color_[1:3],16)},{int(color_[3:5],16)},{int(color_[5:7],16)},0.15)",
+                            showlegend=False, hoverinfo="skip"))
+                        fig_f.add_trace(go.Scatter(
+                            x=datos["proyeccion"]["fecha"], y=datos["proyeccion"]["valor"],
+                            mode="lines+markers", name="Proyección",
+                            line=dict(color=color_, width=2, dash="dash")))
+                        fig_f.update_layout(
+                            title=f"{nombre} — R²={datos['r2']:.2f}",
+                            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                            font_color="white", legend=dict(orientation="h", y=-0.2),
+                        )
+                        # Anotaciones manuales (eventos conocidos) — ver expander
+                        # "Anotaciones" en el sidebar. Manual a propósito: automatizar
+                        # la detección de "por qué" pasó un pico requeriría datos que
+                        # hoy no se capturan (promociones, feriados, etc.).
+                        for _a in st.session_state.get("anotaciones", []):
+                            fig_f.add_vline(x=pd.Timestamp(_a["fecha"]), line_dash="dot",
+                                            line_color="#e0c674")
+                            fig_f.add_annotation(x=pd.Timestamp(_a["fecha"]), y=1, yref="paper",
+                                                  text=_a["texto"], showarrow=False,
+                                                  yshift=10, font=dict(size=10, color="#e0c674"))
+                        st.plotly_chart(fig_f, use_container_width=True)
+                        tendencia = datos["tendencia_semanal"]
+                        direccion = "subiendo" if tendencia > 0 else "bajando" if tendencia < 0 else "estable"
+                        st.caption(f"Tendencia: {direccion} ~{abs(tendencia):,.1f} por semana.")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 12 — KMEANS
+# ══════════════════════════════════════════════════════════════════════════════
+if "KMeans" in _visible:
+    with tabs[_visible.index("KMeans")]:
+        st.subheader("Segmentación de Citas (KMeans)")
+        st.caption("Segmentación no supervisada de citas por duración, precio e ingreso")
+
+        if not hay_citas:
+            st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
+                    "en cuanto existan datos reales.", icon=":material/info:")
+        else:
+            with st.spinner(f"Ejecutando KMeans K={k_clusters} y Método del Codo…"):
+                ks, wcss, sil_scores, km_pdf, sil, centers = entrenar_kmeans(df_vector, k_clusters)
+
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Clusters (K)",        k_clusters)
+            c2.metric("Silhouette Score",    sil, delta="Bueno" if sil > 0.5 else "Aceptable" if sil > 0.2 else "Débil")
+            c3.metric("Total Registros",     f"{len(km_pdf):,}")
+
+            col_a, col_b = st.columns(2)
+
+            with col_a:
+                fig = make_subplots(rows=1, cols=2, subplot_titles=("WCSS — Método del Codo", "Silhouette por K"))
+                fig.add_trace(go.Scatter(x=ks, y=wcss, mode="lines+markers",
+                                         line=dict(color=GOLD, width=2), marker=dict(size=8)), row=1, col=1)
+                fig.add_trace(go.Scatter(x=ks, y=sil_scores, mode="lines+markers",
+                                         line=dict(color=GREEN, width=2), marker=dict(size=8)), row=1, col=2)
+                fig.add_vline(x=k_clusters, line_dash="dash", line_color=RED)
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                  font_color="white", showlegend=False, title_text="Evaluación de K")
+                st.plotly_chart(fig, use_container_width=True)
+
+            with col_b:
+                fig2 = px.scatter(km_pdf, x="precio", y="ingreso",
+                                  color=km_pdf["cluster"].astype(str),
+                                  title=f"Segmentación K={k_clusters} — Precio vs Ingreso",
+                                  hover_data=["servicio", "barbero", "duracion_min", "estado"],
+                                  color_discrete_sequence=px.colors.qualitative.Set1,
+                                  labels={"color": "Cluster", "precio": "Precio ($MXN)", "ingreso": "Ingreso ($MXN)"})
+                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig2, use_container_width=True)
+
+            col_c, col_d = st.columns(2)
+
+            with col_c:
+                fig3 = px.scatter_3d(km_pdf, x="precio", y="duracion_min", z="ingreso",
+                                     color=km_pdf["cluster"].astype(str),
+                                     title="Clustering 3D — Precio / Duración / Ingreso",
+                                     hover_name="servicio",
+                                     color_discrete_sequence=px.colors.qualitative.Set1,
+                                     labels={"color": "Cluster", "duracion_min": "Duración (min)"})
+                fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig3, use_container_width=True)
+
+            with col_d:
+                svc_cluster = km_pdf.groupby(["cluster", "servicio"]).size().reset_index(name="count")
+                fig4 = px.bar(svc_cluster, x="cluster", y="count", color="servicio",
+                              title="Servicios por Cluster",
+                              labels={"cluster": "Cluster", "count": "Citas", "servicio": "Servicio"},
+                              color_discrete_sequence=px.colors.qualitative.Pastel)
+                fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig4, use_container_width=True)
+
+            st.subheader("Centroides de Clusters")
+            centro_df = pd.DataFrame(centers, columns=["Duración (min)", "Precio ($)", "Ingreso ($)"])
+            centro_df.index = [f"Cluster {i}" for i in range(len(centers))]
+            st.dataframe(centro_df.style.format("{:.2f}"), use_container_width=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 13 — PCA
+# ══════════════════════════════════════════════════════════════════════════════
+if "PCA" in _visible:
+    with tabs[_visible.index("PCA")]:
+        st.subheader("Reducción de Dimensionalidad (PCA + KMeans)")
+        st.caption("Reducción de dimensionalidad: 3 features → 2 componentes principales → clustering")
+
+        if not hay_citas:
+            st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
+                    "en cuanto existan datos reales.", icon=":material/info:")
+        else:
+            with st.spinner("Ejecutando PCA + KMeans…"):
+                pca_pdf, varianza, pca_sil = entrenar_pca(df_vector, df)
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Varianza PC1",        f"{varianza[0]:.1f}%")
+            c2.metric("Varianza PC2",        f"{varianza[1]:.1f}%")
+            c3.metric("Varianza Total",      f"{sum(varianza):.1f}%")
+            c4.metric("Silhouette (PCA+KM)", pca_sil)
+
+            col_a, col_b = st.columns(2)
+
+            with col_a:
+                fig = px.scatter(pca_pdf, x="PC1", y="PC2",
+                                 color=pca_pdf["cluster"].astype(str),
+                                 hover_data=["servicio", "barbero", "precio", "duracion_min", "ingreso"],
+                                 title=f"PCA + KMeans — Varianza explicada: {sum(varianza):.1f}%  |  Silhouette: {pca_sil}",
+                                 color_discrete_sequence=px.colors.qualitative.Set1,
+                                 labels={"color": "Cluster",
+                                         "PC1": f"PC1 ({varianza[0]:.1f}% varianza)",
+                                         "PC2": f"PC2 ({varianza[1]:.1f}% varianza)"})
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig, use_container_width=True)
+
+            with col_b:
+                # Varianza explicada
+                fig2 = go.Figure()
+                fig2.add_trace(go.Bar(x=["PC1", "PC2"], y=varianza,
+                                      marker_color=[GOLD, BLUE], text=[f"{v:.1f}%" for v in varianza],
+                                      textposition="outside", textfont_color="white"))
+                fig2.add_trace(go.Scatter(x=["PC1", "PC2"], y=[sum(varianza[:1]), sum(varianza)],
+                                          mode="lines+markers+text", name="Varianza acumulada",
+                                          line_color=GREEN, text=[f"{sum(varianza[:1]):.1f}%", f"{sum(varianza):.1f}%"],
+                                          textposition="top right", textfont_color="white"))
+                fig2.update_layout(title="Varianza Explicada por Componente Principal",
+                                   paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                   font_color="white", yaxis_title="%", showlegend=True)
+                st.plotly_chart(fig2, use_container_width=True)
+
+            col_c, col_d = st.columns(2)
+
+            with col_c:
+                svc_pca = pca_pdf.groupby(["cluster", "servicio"]).size().reset_index(name="count")
+                fig3 = px.sunburst(svc_pca, path=["cluster", "servicio"], values="count",
+                                   title="Composición de Clusters por Servicio (Sunburst)",
+                                   color_discrete_sequence=px.colors.qualitative.Set1)
+                fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig3, use_container_width=True)
+
+            with col_d:
+                perfil = pca_pdf.groupby("cluster").agg(
+                    avg_precio=("precio", "mean"),
+                    avg_ingreso=("ingreso", "mean"),
+                    avg_duracion=("duracion_min", "mean"),
+                    total_citas=("precio", "count"),
+                ).reset_index()
+                fig4 = px.bar(perfil, x="cluster", y=["avg_precio", "avg_ingreso", "avg_duracion"],
+                              barmode="group", title="Perfil de Clusters PCA (promedios)",
+                              labels={"value": "Valor", "cluster": "Cluster", "variable": "Métrica"},
+                              color_discrete_sequence=[GOLD, GREEN, BLUE])
+                fig4.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig4, use_container_width=True)
+
+            st.subheader("Interpretación de Clusters PCA")
+            avg = pca_pdf.groupby("cluster")[["precio", "ingreso", "duracion_min"]].mean()
+            for cl in sorted(pca_pdf["cluster"].unique()):
+                row    = avg.loc[cl]
+                global_avg = pca_pdf[["precio", "ingreso", "duracion_min"]].mean()
+                perfil_txt = "Premium" if row["ingreso"] > global_avg["ingreso"] and row["precio"] > global_avg["precio"] \
+                             else "Económico" if row["ingreso"] < global_avg["ingreso"] \
+                             else "Estándar"
+                st.info(f"**Cluster {cl} — {perfil_txt}**: "
+                        f"Precio ${row['precio']:.0f} | Ingreso ${row['ingreso']:.0f} | "
+                        f"Duración {row['duracion_min']:.0f} min")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 14 — SEGMENTACIÓN DE CLIENTES
+# ══════════════════════════════════════════════════════════════════════════════
+if "Segmentacion Clientes" in _visible:
+    with tabs[_visible.index("Segmentacion Clientes")]:
+        st.subheader("Segmentación de Clientes (RFM + KMeans)")
+        st.caption("Clientes reales agrupados en 4 segmentos por comportamiento de consumo")
+
+        if not hay_citas:
+            st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
+                    "en cuanto existan datos reales.", icon=":material/info:")
+        else:
+            seg_pdf, seg_sil, seg_stats = entrenar_segmentacion(spark, df)
+
+            dist = seg_pdf["segmento"].value_counts().reset_index()
+            dist.columns = ["segmento", "clientes"]
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Clientes", f"{len(seg_pdf):,}")
+            c2.metric("Segmentos", seg_pdf["segmento"].nunique())
+            c3.metric("Silhouette", seg_sil, delta="Bueno" if seg_sil > 0.5 else "Aceptable" if seg_sil > 0.2 else "Débil")
+            vip = int(dist.loc[dist["segmento"] == "VIP", "clientes"].sum())
+            c4.metric("Clientes VIP", vip)
+
+            col_a, col_b = st.columns(2)
+            with col_a:
+                fig = px.pie(dist, values="clientes", names="segmento", hole=0.45,
+                             title="Distribución de Clientes por Segmento",
+                             color_discrete_sequence=px.colors.qualitative.Set2)
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig, use_container_width=True)
+            with col_b:
+                fig2 = px.scatter(seg_pdf, x="total_citas", y="gasto_total", color="segmento",
+                                  size="gasto_promedio", hover_name="cliente",
+                                  title="Clientes: Frecuencia vs Gasto (color = segmento)",
+                                  labels={"total_citas": "Total de citas", "gasto_total": "Gasto total ($MXN)"},
+                                  color_discrete_sequence=px.colors.qualitative.Set2)
+                fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig2, use_container_width=True)
+
+            st.subheader("Perfil promedio de cada segmento")
+            st.dataframe(seg_stats[["segmento", "num_clientes", "citas_prom", "gasto_total_prom",
+                                    "ticket_prom", "cancelacion_pct", "dias_inactivo_prom"]],
+                         use_container_width=True, hide_index=True)
+            st.subheader("Top clientes VIP")
+            st.dataframe(seg_pdf[seg_pdf["segmento"] == "VIP"]
+                         .sort_values("gasto_total", ascending=False)
+                         .head(10)[["cliente", "nivel", "total_citas", "gasto_total", "gasto_promedio"]],
+                         use_container_width=True, hide_index=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 15 — RECOMENDACIÓN
+# ══════════════════════════════════════════════════════════════════════════════
+if "Recomendacion" in _visible:
+    with tabs[_visible.index("Recomendacion")]:
+        st.subheader("Recomendación de Servicios (FP-Growth)")
+        st.caption("Market Basket Analysis: 'los clientes que piden A también piden B'")
+
+        if not hay_citas:
+            st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
+                    "en cuanto existan datos reales.", icon=":material/info:")
+        else:
+            freq_pdf, rules_pdf, pop_pdf = entrenar_recomendacion(spark, df)
+
+            c1, c2 = st.columns(2)
+            c1.metric("Reglas encontradas", len(rules_pdf))
+            c2.metric("Servicios analizados", pop_pdf["servicio"].nunique())
+
+            col_a, col_b = st.columns(2)
+            with col_a:
+                fig = px.bar(pop_pdf.head(12).sort_values("veces_pedido"),
+                             x="veces_pedido", y="servicio", orientation="h", color="categoria",
+                             title="Servicios más solicitados",
+                             labels={"veces_pedido": "Veces pedido", "servicio": ""},
+                             color_discrete_sequence=px.colors.qualitative.Set2)
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="white")
+                st.plotly_chart(fig, use_container_width=True)
+            with col_b:
+                st.markdown("**Itemsets frecuentes (servicios que aparecen juntos)**")
+                st.dataframe(freq_pdf.rename(columns={"items": "Servicios", "freq": "Frecuencia"}),
+                             use_container_width=True, hide_index=True)
+
+            st.subheader("Reglas de asociación (ordenadas por lift)")
+            if len(rules_pdf) > 0:
+                st.dataframe(rules_pdf.rename(columns={
+                    "si_pide": "Si pide", "tambien_pedira": "También pedirá",
+                    "confianza_pct": "Confianza %", "lift": "Lift", "support_pct": "Support %"}),
+                    use_container_width=True, hide_index=True)
+                st.caption("lift > 1.5 → recomendación fuerte · lift > 1.0 → válida · lift < 1.0 → no recomendar")
+            else:
+                st.warning("No se encontraron reglas con los umbrales actuales (dataset con poca co-ocurrencia por cliente).")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FOOTER
+# ─────────────────────────────────────────────────────────────────────────────
+st.divider()
+st.markdown(
+    f"<p style='text-align:center;color:#555;font-size:11px;'>"
+    f"UrbanBlade Analytics · Equipo UrbanBlade</p>",
+    unsafe_allow_html=True
+)
