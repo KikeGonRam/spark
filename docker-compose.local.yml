@@ -1,0 +1,14 @@
+# Superposición local: siempre selecciona la API y Mongo de desarrollo de Barber.
+services:
+  dashboard:
+    environment:
+      CORE_MONGODB_URI: mongodb://mongo-dev:27017/?replicaSet=rsdev
+      MONGO_DB: urbanblade_dev
+      ANALYTICS_MONGODB_URI: mongodb://mongo-dev:27017/?replicaSet=rsdev
+      ANALYTICS_MONGO_DB: urbanblade_analytics_dev
+      BARBER_API_URL: http://ub-demo-api:8000
+      BARBER_PUBLIC_URL: http://localhost:8001
+      ALLOW_ANALYTICS_PUBLICATION: "false"
+      ALLOW_SYNTHETIC_WRITES: "false"
+    cpus: 2
+    mem_limit: 3g

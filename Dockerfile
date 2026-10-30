@@ -22,6 +22,7 @@ RUN python -m pip install --only-binary=:all: --no-cache-dir --index-url https:/
 
 COPY --chown=analytics:analytics config/ ./config/
 COPY --chown=analytics:analytics dashboard/ ./dashboard/
+COPY --chown=analytics:analytics .streamlit/ ./.streamlit/
 RUN mkdir -p /app/spark-warehouse /app/data \
     && chown -R analytics:analytics /app/spark-warehouse /app/data
 USER 10001:10001

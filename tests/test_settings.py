@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from config import diagnostics
-from config.settings import ConfigurationError, connect_mongo, mongo_settings, require_write_opt_in
+from config.settings import ConfigurationError, connect_mongo, data_source_label, mongo_settings, require_write_opt_in
 
 
 BASE = {
@@ -17,6 +17,18 @@ BASE = {
 
 
 class SettingsTest(unittest.TestCase):
+    def test_source_label_distinguishes_local_and_atlas_without_credentials(self):
+        cases = [('mongodb://reader:private-password@mongo-dev:27017/core_e2e', 'MongoDB local · core_e2e'),
+                 ('mongodb+srv://reader:private-password@cluster.example.mongodb.net/core_e2e',
+                  'MongoDB Atlas · core_e2e')]
+        for uri, expected in cases:
+            with self.subTest(expected=expected), patch.dict(os.environ, {**BASE, 'CORE_MONGODB_URI': uri}, clear=True), \
+                 patch('config.settings.load_environment'):
+                label = data_source_label()
+                self.assertEqual(label, expected)
+                self.assertNotIn('private-password', label)
+                self.assertNotIn('reader', label)
+
     def test_validates_separate_connections_without_connecting(self):
         with patch.dict(os.environ, BASE, clear=True):
             self.assertEqual(mongo_settings().database, 'core_e2e')

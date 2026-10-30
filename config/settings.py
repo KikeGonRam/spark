@@ -109,3 +109,17 @@ def validate_local_test_target(uri, database):
         valid = False
     if not valid:
         raise ConfigurationError('Los fixtures requieren Mongo local sin credenciales y una base propia *_e2e.')
+
+
+def data_source_label():
+    """Descripción visible de la conexión; nunca incluye URI, usuario o contraseña."""
+    load_environment()
+    settings = mongo_settings()
+    host = urlsplit(settings.uri).hostname
+    if host in {'localhost', '127.0.0.1', '::1', 'mongo-dev', 'barber-mongo-dev', 'host.docker.internal'}:
+        kind = 'MongoDB local'
+    elif host and host.endswith('.mongodb.net'):
+        kind = 'MongoDB Atlas'
+    else:
+        kind = 'MongoDB remoto'
+    return kind + ' · ' + settings.database

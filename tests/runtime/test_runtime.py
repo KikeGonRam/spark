@@ -107,6 +107,14 @@ class SparkRuntimeTest(unittest.TestCase):
         self.assertEqual(january.loc[1, "retencion_pct"], 50.0)
         pd.testing.assert_frame_equal(frame, original)
 
+    def test_dataframe_serialization_supports_pinned_numpy(self):
+        import numpy as np
+        import pandas as pd
+        import pyarrow as pa
+        source = pd.DataFrame({"metric": np.array([1.0, 2.5]), "label": ["synthetic-a", "synthetic-b"]})
+        table = pa.Table.from_pandas(source)
+        pd.testing.assert_frame_equal(table.to_pandas(), source)
+
     def test_login_screen_renders_without_reading_mongo(self):
         from streamlit.testing.v1 import AppTest
         with patch.object(self.data, "_connect_db") as connection:

@@ -12,3 +12,6 @@ requests==2.34.2
 
 # PySpark 3.5 importa distutils; Python 3.12 necesita la implementación de setuptools.
 setuptools==84.2.1
+
+# PyArrow 26 exige NumPy 2; las tablas del runtime Spark 3.5 usan NumPy 1.26.
+pyarrow==24.0.0

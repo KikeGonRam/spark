@@ -126,3 +126,15 @@ resolución del perfil completo, solución de un sistema lineal, fit/predict de 
 Random Forest sobre datos sintéticos y render PNG con backend Agg. pip check no
 detectó conflictos. Esto no equivale a entrenar o validar los modelos del negocio,
 ni prueba la ejecución completa de PyTorch/TensorFlow.
+
+## Compatibilidad de tablas y tema
+
+La prueba de runtime serializa un DataFrame NumPy/pandas a Arrow y lo recupera.
+Un import de Streamlit o un healthcheck no detectan por sí solos incompatibilidades
+de tablas: PyArrow 26 requiere NumPy 2 y Streamlit excluye PyArrow 25.0.0.
+El runtime Spark 3.5 mantiene NumPy 1.26.4 y fija PyArrow 24.0.0, con hashes y prueba
+real de serialización. Los cambios mayores de Arrow requieren revisar esta matriz.
+
+.streamlit/config.toml fija el tema oscuro del producto tanto para Docker como para
+la ejecución desde la raíz del repositorio; no se depende del tema del navegador.
+Ver [operación local](operacion.md) para usar una base aislada.
