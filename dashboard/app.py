@@ -171,7 +171,14 @@ if st.session_state.auth_user is None:
 # ─────────────────────────────────────────────────────────────────────────────
 # CARGA DE DATOS (UNA VEZ POR SESIÓN)
 # ─────────────────────────────────────────────────────────────────────────────
-@st.cache_resource(show_spinner="Conectando a MongoDB Atlas y cargando datos reales…")
+from config.settings import ConfigurationError, data_source_label
+
+try:
+    SOURCE_LABEL = data_source_label()
+except ConfigurationError:
+    SOURCE_LABEL = "MongoDB configurado"
+
+@st.cache_resource(show_spinner="Cargando datos de UrbanBlade…")
 def cargar_datos():
     from config.mongo_spark_conexion_sinnulos import get_spark_session
     from pyspark.sql.functions import when, col
@@ -185,7 +192,8 @@ def cargar_datos():
 try:
     _spark_full, _df_full, _df_vector_full, _pdf_full = cargar_datos()
 except Exception as e:
-    st.error(f"Error al conectar con MongoDB Atlas: {e}")
+    st.error("No se pudo cargar la fuente de datos. Revisa la configuración privada y la conexión.")
+    st.caption(f"Detalle técnico: {type(e).__name__}")
     st.stop()
 
 @st.cache_resource(show_spinner="Entrenando modelos de regresión…")
@@ -601,7 +609,7 @@ with st.sidebar:
             st.markdown(
                 "<p class='ub-eyebrow'>Bruno</p>"
                 "<p style='color:#a3a3a3;font-size:12.5px;margin:0;line-height:1.4;'>Guardián del "
-                "conocimiento — lee los datos reales de <code>barber_db</code> y avisa cuando algo "
+                "conocimiento — consulta la fuente de datos configurada y avisa cuando algo "
                 "no cuadra.</p>",
                 unsafe_allow_html=True,
             )
@@ -652,10 +660,10 @@ with st.sidebar:
     # cache_resource nunca expira solo: si la BD cambió (nuevas citas, reseed),
     # el dashboard seguiría mostrando datos viejos hasta reiniciar el proceso.
     if st.button("Actualizar datos", use_container_width=True,
-                 help="Limpia la caché y recarga todo desde MongoDB Atlas"):
+                 help="Limpia la caché y recarga la fuente de datos configurada"):
         st.cache_resource.clear()
         st.rerun()
-    st.caption("MongoDB Atlas → barber_db")
+    st.caption(SOURCE_LABEL)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # APLICAR FILTRO DE FECHAS (citas) — el resto de colecciones (pagos,
@@ -694,7 +702,7 @@ if not hay_citas:
     with col_nava:
         st.image(_NAVA_EMPTY_PATH, width=80)
     with col_msg:
-        st.warning("**barber_db no tiene citas registradas todavía.** El resumen ejecutivo y los "
+        st.warning("**La fuente configurada no tiene citas registradas todavía.** El resumen ejecutivo y los "
                    "modelos predictivos y de segmentación requieren al menos algunas citas reales "
                    "para entrenar — aparecerán automáticamente en cuanto existan datos.",
                    icon=":material/warning:")
@@ -806,7 +814,7 @@ def generar_reporte_pdf(pdf_data: pd.DataFrame, canceladas: int, ingreso_real: f
 # HEADER + KPIs GLOBALES
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown(f"<h1 style='text-align:center;color:{GOLD};font-size:2.2rem;'><i class='fas fa-scissors'></i>&nbsp; UrbanBlade Analytics Dashboard</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align:center;color:#888;margin-top:-10px;'>Panel de inteligencia de negocio · Datos en tiempo real desde MongoDB Atlas</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center;color:#888;margin-top:-10px;'>Panel de inteligencia de negocio · Datos de la fuente configurada</p>", unsafe_allow_html=True)
 st.divider()
 
 def _serie_semanal(pdf_data: pd.DataFrame) -> pd.DataFrame:
@@ -1635,7 +1643,7 @@ if RETENTION_LABEL in _visible:
                    "¿cuánto van a gastar en total?")
 
         if not hay_citas:
-            st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
+            st.info("Todavía no hay citas registradas — este análisis aparecerá "
                     "en cuanto existan datos reales.", icon=INFO_ICON)
         else:
             cohortes_pdf, clv_pdf = analizar_cohortes_clv(spark, df, pdf)
@@ -1715,7 +1723,7 @@ if "Regresion" in _visible:
         st.subheader("Predicción de Ingresos (Regresión)")
         st.caption("Predicción de la FACTURACIÓN DIARIA (target real, sin fuga) · 6 modelos · R², MSE, MAE")
         if not hay_citas:
-            st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
+            st.info("Todavía no hay citas registradas — este análisis aparecerá "
                     "en cuanto existan datos reales.", icon=INFO_ICON)
         else:
             st.info("Se predice el ingreso **por día** a partir del volumen de citas y el calendario. "
@@ -1786,7 +1794,7 @@ if "Arbol de Decision" in _visible:
         st.caption("Clasificación honesta: ¿se CANCELARÁ la cita?  1 = cancelada  |  0 = resto  ·  clases desbalanceadas → AUC")
 
         if not hay_citas:
-            st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
+            st.info("Todavía no hay citas registradas — este análisis aparecerá "
                     "en cuanto existan datos reales.", icon=INFO_ICON)
         else:
             with st.spinner("Entrenando Árbol de Decisión…"):
@@ -1866,7 +1874,7 @@ if "Random Forest" in _visible:
         st.caption("Mismo problema que el Árbol (cancelación) pero con 100 árboles → comparar AUC: el bosque suele ganar")
 
         if not hay_citas:
-            st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
+            st.info("Todavía no hay citas registradas — este análisis aparecerá "
                     "en cuanto existan datos reales.", icon=INFO_ICON)
         else:
             with st.spinner("Entrenando Random Forest (100 árboles)…"):
@@ -1940,7 +1948,7 @@ if "Churn / Abandono" in _visible:
         st.caption("Random Forest · churn = cliente con recencia > percentil 70 · features SIN la recencia (sin fuga)")
 
         if not hay_citas:
-            st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
+            st.info("Todavía no hay citas registradas — este análisis aparecerá "
                     "en cuanto existan datos reales.", icon=INFO_ICON)
         else:
             ch_metrics, ch_imp, ch_riesgo, (n_riesgo, n_total) = entrenar_churn(spark, df)
@@ -1983,7 +1991,7 @@ if "Demanda" in _visible:
         st.caption("Regresión supervisada (GBT): ¿cuántas citas esperar por hora, día y mes?")
 
         if not hay_citas:
-            st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
+            st.info("Todavía no hay citas registradas — este análisis aparecerá "
                     "en cuanto existan datos reales.", icon=INFO_ICON)
         else:
             dem_hora, dem_dia, dem_mes, dem_r2, dem_imp = analizar_demanda(spark, df)
@@ -2097,7 +2105,7 @@ if "KMeans" in _visible:
         st.caption("Segmentación no supervisada de citas por duración, precio e ingreso")
 
         if not hay_citas:
-            st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
+            st.info("Todavía no hay citas registradas — este análisis aparecerá "
                     "en cuanto existan datos reales.", icon=INFO_ICON)
         else:
             with st.spinner(f"Ejecutando KMeans K={k_clusters} y Método del Codo…"):
@@ -2166,7 +2174,7 @@ if "PCA" in _visible:
         st.caption("Reducción de dimensionalidad: 3 features → 2 componentes principales → clustering")
 
         if not hay_citas:
-            st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
+            st.info("Todavía no hay citas registradas — este análisis aparecerá "
                     "en cuanto existan datos reales.", icon=INFO_ICON)
         else:
             with st.spinner("Ejecutando PCA + KMeans…"):
@@ -2252,7 +2260,7 @@ if "Segmentacion Clientes" in _visible:
         st.caption("Clientes reales agrupados en 4 segmentos por comportamiento de consumo")
 
         if not hay_citas:
-            st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
+            st.info("Todavía no hay citas registradas — este análisis aparecerá "
                     "en cuanto existan datos reales.", icon=INFO_ICON)
         else:
             seg_pdf, seg_sil, seg_stats = entrenar_segmentacion(spark, df)
@@ -2301,7 +2309,7 @@ if "Recomendacion" in _visible:
         st.caption("Market Basket Analysis: 'los clientes que piden A también piden B'")
 
         if not hay_citas:
-            st.info("Todavía no hay citas registradas en barber_db — este análisis aparecerá "
+            st.info("Todavía no hay citas registradas — este análisis aparecerá "
                     "en cuanto existan datos reales.", icon=INFO_ICON)
         else:
             freq_pdf, rules_pdf, pop_pdf = entrenar_recomendacion(spark, df)

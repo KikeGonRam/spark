@@ -7,6 +7,9 @@ publicar una versión ni desplegar un servicio.
 
 ### 2026-10-29
 
+- Validación local autenticada: perfil aislado de Barber, tema oscuro y etiqueta de origen efectiva.
+- PyArrow 24 fijado para serializar tablas con NumPy 1.26.4; prueba de ida y vuelta incluida.
+
 - Organización por módulos de preparación, modelos, dashboard y publicación.
 - Arquitectura, operación, evaluación, contribución y seguridad actualizadas.
 - Licencia GPL-3.0-only y plantillas de colaboración.
