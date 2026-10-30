@@ -16,3 +16,11 @@ docs_word
 .agents
 .claude
 *.log
+
+# Artefactos privados de validación local
+.playwright-cli
+output/playwright
+.dependency-locks
+build
+dist
+*.egg-info

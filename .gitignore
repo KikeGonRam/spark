@@ -31,3 +31,7 @@ dist/
 
 # Entradas locales revisadas para regenerar locks
 .dependency-locks/
+
+# Evidencia privada de navegador
+.playwright-cli/
+output/playwright/
