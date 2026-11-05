@@ -7,7 +7,7 @@ pandas==2.3.3
 numpy==1.26.4
 plotly==7.1.0
 streamlit==1.66.1
-fpdf2==2.8.9
+fpdf2==2.9.0
 requests==2.34.2
 
 # PySpark 3.5 importa distutils; Python 3.12 necesita la implementación de setuptools.
